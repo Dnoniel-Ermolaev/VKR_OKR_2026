@@ -21,18 +21,21 @@
 
 ```mermaid
 graph TD
-    A[Пользователь: Ввод симптомов в Streamlit] --> B[Streamlit UI: Форма + Поиск пациентов]
-    B --> C[LangGraph: Запуск графа с initial_state {patient_data}]
-    C --> D[Узел 1: Parse Input - Парсинг данных (Pydantic)]
-    D --> E[Узел 2: Rule Check - Hard rules (if troponin >0.1 and ST-elevation: high risk)]
-    E -->|Если ясно| H[Узел 5: Output - Сохранение в CSV + Формирование ответа]
-    E -->|Если неясно| F[Узел 3: RAG Retrieval - Поиск в гайдлайнах (Chroma.query)]
-    F --> G[Узел 4: LLM Assess - Вызов LLM с промптом + контекстом от RAG + похожие пациенты из CSV]
+    A[Пользователь вводит данные в Streamlit] --> B[Streamlit UI]
+    B --> C[Запуск LangGraph]
+    C --> D[Parse Input<br>Парсинг данных]
+    D --> E[Rule Check<br>Жёсткие правила]
+    E -->|Критично / ясно| H[Output<br>Сохранение + Ответ]
+    E -->|Нужна оценка| F[RAG Retrieval<br>Поиск в гайдлайнах]
+    F --> G[LLM Assess<br>Оценка риска LLM]
     G --> H
-    H --> B[Streamlit: Вывод риска + объяснения + обновлённый поиск]
-    I[CSV База: patients.csv (Pandas load/save/search)] <--> H
-    J[Векторная БД: guidelines.db (Chroma/FAISS)] <--> F
-    K[Ollama LLM: Локальная модель] <--> G
+    H --> B[Вывод результата в UI]
+    
+    subgraph "Внешние компоненты"
+        I[patients.csv<br>Пациенты (Pandas)] <--> H
+        J[Chroma / FAISS<br>Гайдлайны (RAG)] <--> F
+        K[Ollama LLM] <--> G
+    end
 ```
 
 ### Компоненты:
