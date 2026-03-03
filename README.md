@@ -17,26 +17,24 @@
 
 ## Architecture
 
-Система построена как агентный workflow на LangGraph, где граф управляет потоком от ввода данных до вывода риска. Вот высокоуровневая диаграмма (в формате Mermaid для рендеринга в GitHub):
+Система построена как агентный workflow на LangGraph...
+
+Вот высокоуровневая диаграмма:
 
 ```mermaid
 graph TD
-    A[Пользователь вводит данные в Streamlit] --> B[Streamlit UI]
-    B --> C[Запуск LangGraph]
-    C --> D[Parse Input<br>Парсинг данных]
-    D --> E[Rule Check<br>Жёсткие правила]
-    E -->|Критично / ясно| H[Output<br>Сохранение + Ответ]
-    E -->|Нужна оценка| F[RAG Retrieval<br>Поиск в гайдлайнах]
-    F --> G[LLM Assess<br>Оценка риска LLM]
-    G --> H
-    H --> B[Вывод результата в UI]
-    
-    subgraph "Внешние компоненты"
-        I[patients.csv<br>Пациенты (Pandas)] <--> H
-        J[Chroma / FAISS<br>Гайдлайны (RAG)] <--> F
-        K[Ollama LLM] <--> G
-    end
-```
+    A[User → Streamlit] --> B[LangGraph Workflow]
+    B --> C[Parse Input]
+    C --> D[Rule Check]
+    D -->|Obvious High Risk| E[Output & Save]
+    D -->|Unclear → LLM| F[RAG Retrieval]
+    F --> G[LLM Assessment]
+    G --> E
+    E --> B[Display Result]
+
+    I[patients.csv] <--> E
+    J[Guidelines DB] <--> F
+    K[Ollama LLM] <--> G
 
 ### Компоненты:
 - **LangGraph**: Оркестратор. State: TypedDict с полями (patient_data: dict, rag_context: str, db_results: list, risk: float, explanation: str). Узлы: parse_input, rule_check, rag_retrieval, llm_assess, output_save. Рёбра: conditional (на основе риска).
