@@ -46,7 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model-b",
-        default=os.getenv("OLLAMA_MODEL_B", "medgemma:latest"),
+        default=os.getenv("OLLAMA_MODEL_B", "qwen2.5:3b-instruct"),
         help="Second model for A/B mode",
     )
     return parser

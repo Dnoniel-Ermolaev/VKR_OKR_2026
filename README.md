@@ -1,189 +1,291 @@
-# LangGraph-ACS-Diagnosis
+# LangGraph ACS (Console Prototype)
 
-Гибридная экспертная система диагностики острого коронарного синдрома (ОКС) на базе LangGraph + локальной LLM + RAG. Прозрачная, объяснимая, работает полностью локально.
+Прототип локальной системы первичной оценки риска ОКС (образовательный сценарий).
+Текущая реализация запускается из консоли и сохраняет результаты в CSV/JSON.
 
-## Overview
+## Что реально реализовано
 
-Этот проект представляет собой прототип агентной системы для первичной оценки риска острого коронарного синдрома (ОКС) на основе современных технологий ИИ (2026 год). Основная цель — автоматизировать диагностику на основе медицинских данных пациента (симптомы, ЭКГ, тропонин, ЧСС, АД), используя комбинацию rule-based логики, языковых моделей (LLM) и Retrieval-Augmented Generation (RAG) для интеграции с клиническими рекомендациями (ESC/AHA 2025–2026).
+- Консольный запуск через `python -m src.cli.main`.
+- Агентный workflow на `LangGraph` с узлами:
+  - `parse_input`
+  - `rule_check`
+  - `rag_retrieval`
+  - `llm_assess`
+  - `output_save`
+- Rule-based базовая оценка риска (`src/medical/rules.py`).
+- Локальный LLM через `Ollama` (`src/core/tools.py`).
+- Локальный RAG в виде retrieval по `.txt` документам (`data/guidelines/*.txt`).
+- Сохранение истории пациентов в `data/patients.csv`.
+- A/B режим сравнения двух моделей (`--mode ab`).
+- Fallback-режим без LLM (если модель недоступна и не указан `--require-llm`).
 
-**Ключевые особенности:**
-- **Прозрачность и объяснимость**: LangGraph обеспечивает traceability каждого шага (логи state), LLM генерирует обоснования с цитатами из гайдлайнов.
-- **Локальность**: Всё работает на одной машине без интернета (Ollama для LLM, Chroma для RAG, CSV для хранения пациентов).
-- **Гибридный подход**: Hard-rules для критических случаев (STEMI), LLM для неструктурированных данных, RAG для актуальных знаний.
-- **Масштабируемость**: Поддержка большого количества пациентов (поиск, история), легко добавить ML-модели (XGBoost для HEART/GRACE scores).
-- **Не для реального использования**: Это демонстрационный прототип. Не заменяет врача; добавьте disclaimers в production.
+## Что пока не реализовано
 
-Проект эволюционировал от rule-based системы на Drools (см. оригинальный репозиторий [Dnoniel-Ermolaev/Drools_Diplom](https://github.com/Dnoniel-Ermolaev/Drools_Diplom)) к агентной архитектуре для большей гибкости и обобщения.
+- Web UI (Streamlit/веб-приложение).
+- Векторная БД (Chroma/FAISS) и embedding-retrieval.
+- Автоматический разбор полностью свободного текстового ввода в структурированные поля.
 
-## Architecture
+## Архитектура
 
-Система построена как агентный workflow на LangGraph...
-
-Вот высокоуровневая диаграмма:
+### Текущая (реализованная) схема
 
 ```mermaid
 graph TD
-    A[User → Streamlit] --> B[LangGraph Workflow]
-    B --> C[Parse Input]
-    C --> D[Rule Check]
-    D -->|Obvious High Risk| E[Output & Save]
-    D -->|Unclear → LLM| F[RAG Retrieval]
-    F --> G[LLM Assessment]
-    G --> E
-    E --> B[Display Result]
-
-    I[patients.csv] <--> E
-    J[Guidelines DB] <--> F
-    K[Ollama LLM] <--> G
+    A[CLI input] --> B[parse_input]
+    B --> C[rule_check]
+    C -->|route_to_llm=true| D[rag_retrieval]
+    D --> E[llm_assess]
+    C -->|route_to_llm=false| F[output_save]
+    E --> F
+    F --> G[JSON output + patients.csv]
 ```
 
-### Компоненты:
-- **LangGraph**: Оркестратор. State: TypedDict с полями (patient_data: dict, rag_context: str, db_results: list, risk: float, explanation: str). Узлы: parse_input, rule_check, rag_retrieval, llm_assess, output_save. Рёбра: conditional (на основе риска).
-- **LLM**: Локальная модель через Ollama (рекомендуется `qwen2.5:7b-instruct` для стабильного JSON; для A/B можно сравнивать с `medgemma:latest` (отсутствует в ollama)). Используется для: парсинга текста, оценки риска, генерации объяснений.
-- **RAG**: Для интеграции гайдлайнов (ESC/AHA). Эмбеддер: sentence-transformers.all-MiniLM-L6-v2. Векторная БД: Chroma (локально). Retrieval: similarity_search с top-k=3.
-- **База пациентов**: CSV-файл (patients.csv) через Pandas. Столбцы: id, name, symptoms_json, ecg_desc, troponin, hr, bp, risk_level, explanation, timestamp. Операции: append, search (pandas.query + семантический через FAISS для симптомов).
-- **UI**: Streamlit для веб-интерфейса. Страницы: ввод данных, оценка риска, история пациентов (с фильтрами и поиском).
-- **Tools/Интеграции**: В LangGraph — tools для DB search (pandas), RAG query, HEART/GRACE calculators (pure Python functions).
+### Целевая (будущая) схема
 
-### Данные пациента (пример схемы):
-```python
-from pydantic import BaseModel
+```mermaid
+graph LR
+    U[Пользователь: CLI / Web UI / API] --> I[Input Layer]
+    I --> N1[parse_input]
+    I --> N0[parse_free_text: LLM parser]
+    N0 --> N1
+    N1 --> N2[rule_check]
 
-class PatientData(BaseModel):
-    name: str
-    pain_type: str  # "typical", "atypical", "none"
-    ecg_changes: str  # "ST-elevation", "ST-depression", "normal"
-    troponin: float
-    hr: int  # heart rate
-    bp: str  # "120/80"
-    # Другие поля...
+    N2 -->|очевидный high-risk| N7[output_save]
+    N2 -->|неочевидный кейс| N3[rag_retrieval]
+
+    subgraph RAG[Knowledge Layer]
+      G1[guidelines txt/pdf]
+      G2[chunking + embeddings]
+      G3[(Vector DB: Chroma/FAISS)]
+      G1 --> G2 --> G3
+    end
+
+    N3 --> G3
+    G3 --> N4[llm_assess]
+    N4 --> N5[risk_stratification: HEART/GRACE/CRUSADE]
+    N5 --> N6[treatment_planner]
+    N6 --> N7
+
+    subgraph Storage[Persistence]
+      D1[(patients.csv / SQL)]
+      D2[(audit logs)]
+    end
+    N7 --> D1
+    N7 --> D2
+
+    N7 --> O[Result JSON + explanation + plan]
 ```
 
-## Installation
+### Целевая (будущая) схема для слайда 16:9 (вертикальная)
 
-### Требования:
-- Python 3.10+ (рекомендуется 3.12 для Ollama).
-- GPU: Опционально (для ускорения LLM; минимально RTX 3060 для 7B-моделей).
-- Зависимости: Установите через `requirements.txt`.
+```mermaid
+graph TD
+    U[Пользователь: CLI / Web UI / API]
+    U --> I[Input Layer]
+    I --> N0[parse_free_text: LLM parser]
+    I --> N1[parse_input]
+    N0 --> N1
+
+    N1 --> N2[rule_check]
+    N2 -->|high-risk очевиден| N7[output_save]
+    N2 -->|кейс неочевиден| N3[rag_retrieval]
+
+    subgraph RAG[Knowledge Layer]
+      G1[Guidelines: TXT/PDF]
+      G2[Chunking + Embeddings]
+      G3[(Vector DB)]
+      G1 --> G2 --> G3
+    end
+
+    N3 --> G3
+    G3 --> N4[llm_assess]
+    N4 --> N5[risk_stratification]
+    N5 --> N6[treatment_planner]
+    N6 --> N7
+
+    subgraph Persistence[Persistence]
+      D1[(patients.csv / SQL)]
+      D2[(audit logs)]
+    end
+    N7 --> D1
+    N7 --> D2
+    N7 --> O[Result JSON + explanation + treatment hints]
+```
+
+Логика ветвления:
+- если кейс очевидно high-risk по правилам, workflow может завершиться без LLM;
+- если кейс неочевидный, подключаются RAG и LLM;
+- `--force-llm` принудительно ведет в LLM-ветку;
+- `--require-llm` запрещает fallback и завершает выполнение ошибкой при недоступной LLM.
+
+## Модели и зависимости
+
+`requirements.txt`:
+- `langgraph`
+- `pydantic`
+- `pandas`
+- `pytest`
+- `ollama`
+
+Рекомендуемые модели для запуска:
+- `qwen2.5:7b-instruct`
+- `qwen2.5:3b-instruct` (как вторая модель для A/B)
+
+`medgemma:latest` может отсутствовать в Ollama registry, поэтому не используется как дефолт.
+
+## Установка
 
 ```bash
-# Клонируйте репозиторий
-git clone https://github.com/your-username/LangGraph-ACS-Diagnosis.git
-cd LangGraph-ACS-Diagnosis
-
-# Создайте виртуальное окружение
 python -m venv .venv
-source .venv/bin/activate  # Или .venv\Scripts\activate на Windows
-
-# Установите зависимости
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-# requirements.txt пример:
-langgraph
-langchain
-langchain-community  # Для Ollama, Chroma
-streamlit
-pandas
-sentence-transformers
-pydantic
-ollama  # Если не установлен глобально
+python -m src.infrastructure.rag.rag_setup
 ```
 
-- **Ollama**: Установите локально (ollama.com). Скачайте модели:
-  - `ollama pull qwen2.5:7b-instruct`
-  - `ollama pull medgemma:latest`
-- **Гайдлайны для RAG**: Скачайте PDF (ESC 2025 ACS guidelines) в `data/guidelines/`. Запустите скрипт `src/infrastructure/rag_setup.py` для создания векторной БД.
+Установить Ollama и скачать модели:
 
-## Usage
+```bash
+ollama pull qwen2.5:7b-instruct
+ollama pull qwen2.5:3b-instruct
+```
 
-### Локальный запуск (console-first):
-1. Создайте seed для RAG (один раз): `python -m src.infrastructure.rag.rag_setup`.
-2. Опционально запустите Ollama: `ollama serve` (если не запущен, система перейдёт в fallback режим без LLM).
-3. Запустите оценку из консоли (single режим):
-   `python -m src.cli.main --mode single --model qwen2.5:7b-instruct --name Ivan --pain-type typical --ecg-changes "ST-depression" --troponin 0.12 --hr 102 --bp 130/85 --symptoms-text "давящая боль в груди 30 минут" --output data/last_result.json --require-llm`
-4. Для A/B сравнения двух моделей на одном кейсе:
-   `python -m src.cli.main --mode ab --model qwen2.5:7b-instruct --model-b medgemma:latest --name Ivan --pain-type typical --ecg-changes "ST-depression" --troponin 0.12 --hr 102 --bp 130/85 --symptoms-text "давящая боль в груди 30 минут" --output data/ab_result.json --require-llm --force-llm`
-5. На выходе будет JSON с риском, объяснением, `record_id`, `llm_used` и названием модели; запись сохранится в `data/patients.csv`, а также в файл `--output`.
-6. Web UI можно добавить отдельно (например, на Streamlit), используя тот же `src.core.graph`.
-7. Если `langgraph`/`pandas` не установлены, доступен упрощённый fallback-пайплайн (invoke + CSV) для быстрого старта.
-8. Для принудительного прохода через LLM даже в high-risk rule-cases используйте `--force-llm`.
-9. Для строго LLM-режима используйте `--require-llm` (если Ollama недоступен, команда завершится с ошибкой вместо fallback).
+## Запуск (CLI)
 
-### Быстрые скрипты (PowerShell):
-- Запуск оценки: `.\scripts\run.ps1 -RequireLlm -ForceLlm`
-- A/B сравнение: `.\scripts\run.ps1 -Mode ab -Model qwen2.5:7b-instruct -ModelB qwen2.5:3b-instruct -RequireLlm -ForceLlm -Output data/ab_result.json`
-- Запуск тестов: `.\scripts\test.ps1`
-- Установка зависимостей + тесты: `.\scripts\test.ps1 -InstallDeps`
+### Прямой запуск из корня проекта (python)
 
-### Быстрые скрипты (Bash, Linux/macOS/Windows через Git Bash/WSL):
-- Запуск оценки: `./scripts/run.sh --require-llm --force-llm`
-- A/B сравнение: `./scripts/run.sh --mode ab --model qwen2.5:7b-instruct --model-b qwen2.5:3b-instruct --require-llm --force-llm --output data/ab_result.json`
-- Запуск тестов: `./scripts/test.sh`
-- Установка зависимостей + тесты: `./scripts/test.sh --install-deps`
+Single режим (bash/git-bash):
 
-### Пример вызова графа из кода (для тестов):
+```bash
+python -m src.cli.main \
+  --mode single \
+  --model qwen2.5:7b-instruct \
+  --name Ivan \
+  --pain-type typical \
+  --ecg-changes "ST-depression" \
+  --troponin 0.12 \
+  --hr 102 \
+  --bp 130/85 \
+  --symptoms-text "давящая боль в груди 30 минут" \
+  --output data/last_result.json \
+  --require-llm \
+  --force-llm
+```
+
+A/B режим (bash/git-bash):
+
+```bash
+python -m src.cli.main \
+  --mode ab \
+  --model qwen2.5:7b-instruct \
+  --model-b qwen2.5:3b-instruct \
+  --name Ivan \
+  --pain-type typical \
+  --ecg-changes "ST-depression" \
+  --troponin 0.12 \
+  --hr 102 \
+  --bp 130/85 \
+  --symptoms-text "давящая боль в груди 30 минут" \
+  --output data/ab_result.json \
+  --require-llm \
+  --force-llm
+```
+
+Single режим (PowerShell):
+
+```powershell
+python -m src.cli.main `
+  --mode single `
+  --model qwen2.5:7b-instruct `
+  --name Ivan `
+  --pain-type typical `
+  --ecg-changes "ST-depression" `
+  --troponin 0.12 `
+  --hr 102 `
+  --bp 130/85 `
+  --symptoms-text "давящая боль в груди 30 минут" `
+  --output data/last_result.json `
+  --require-llm `
+  --force-llm
+```
+
+Выход:
+- JSON-файл в `--output`
+- запись в `data/patients.csv`
+
+## Скрипты
+
+Bash-скрипты (Linux/macOS/Windows через Git Bash/WSL):
+
+- `./scripts/run.sh --require-llm --force-llm`
+- `./scripts/run.sh --mode ab --model qwen2.5:7b-instruct --model-b qwen2.5:3b-instruct --require-llm --force-llm --output data/ab_result.json`
+- `./scripts/test.sh`
+- `./scripts/test.sh --install-deps`
+
+## Пример программного вызова
+
 ```python
-from src.core.graph import graph  # Compiled LangGraph
+from src.core.graph import graph
 
-input_data = {"patient_data": {"name": "Ivan", "pain_type": "typical", "troponin": 0.2}}
+input_data = {
+    "patient_data": {
+        "name": "Ivan",
+        "pain_type": "typical",
+        "ecg_changes": "ST-depression",
+        "troponin": 0.12,
+        "hr": 102,
+        "bp": "130/85",
+        "symptoms_text": "давящая боль в груди 30 минут",
+    },
+    "require_llm": True,
+    "force_llm": True,
+    "llm_model": "qwen2.5:7b-instruct",
+}
 result = graph.invoke(input_data)
-print(result["risk"], result["explanation"])
+print(result["risk"], result["risk_level"], result["explanation"])
 ```
 
-## Structure
+## Структура проекта (актуально, с комментариями)
 
-```
-LangGraph-ACS-Diagnosis/
-├── data/                       # Данные
-│   ├── guidelines/             # PDF/TXT гайдлайнов для RAG
-│   └── patients.csv            # База пациентов
+```text
+.
+├── data/                                   # Локальные данные проекта
+│   ├── guidelines/                         # Локальные txt-гайдлайны для RAG retrieval
+│   │   └── acs_quick_guide.txt             # Seed-файл рекомендаций
+│   └── patients.csv                        # История оценок пациентов
+├── scripts/
+│   ├── run.sh                              # Bash-обертка для запуска CLI (single/ab)
+│   └── test.sh                             # Bash-обертка для pytest
 ├── src/
-│   ├── core/                   # Логика агента
-│   │   ├── state.py            # AgentState (TypedDict)
-│   │   ├── nodes.py            # Узлы графа (parse_input, rule_check и т.д.)
-│   │   ├── prompts.py          # Системные промпты для LLM
-│   │   ├── tools.py            # Tools (db_search, rag_query, score_calculators)
-│   │   └── graph.py            # Сборка и compile графа
-│   ├── medical/                # Медицинская логика
-│   │   ├── rules.py            # Hard-rules (STEMI, etc.)
-│   │   └── scores.py           # HEART, GRACE, TIMI функции
-│   ├── infrastructure/         # Инфраструктура
-│   │   ├── db/                 # CSV операции (Pandas)
-│   │   │   ├── models.py       # Pydantic модели для пациентов
-│   │   │   └── repository.py   # CRUD: save_patient, search_patients
-│   │   └── rag/                # RAG setup/retrieval
-│   └── cli/                    # Console entrypoint
-│       └── main.py             # python -m src.cli.main
-├── tests/                      # Тесты
-│   ├── unit/                   # Тесты nodes, tools (pytest)
-│   └── integration/            # Тесты графа + UI
-├── .env.example                # Для ключей (если добавите API)
-├── requirements.txt
-├── Dockerfile                  # Опционально для контейнеризации
+│   ├── cli/
+│   │   └── main.py                         # CLI entrypoint и аргументы запуска
+│   ├── core/
+│   │   ├── state.py                        # AgentState (структура состояния графа)
+│   │   ├── nodes.py                        # Узлы workflow: parse/rule/rag/llm/save
+│   │   ├── prompts.py                      # Промпты для LLM-оценки
+│   │   ├── tools.py                        # LLM client (Ollama), fallback, builders
+│   │   └── graph.py                        # Сборка LangGraph + fallback graph
+│   ├── infrastructure/
+│   │   ├── db/
+│   │   │   ├── models.py                   # Pydantic модели входа/записи
+│   │   │   └── repository.py               # CSV repository (save/search)
+│   │   └── rag/
+│   │       ├── retriever.py                # Локальный retrieval по txt (top-k)
+│   │       └── rag_setup.py                # Инициализация seed-гайдлайна
+│   └── medical/
+│       ├── rules.py                        # Hard-rules первичной оценки риска
+│       └── scores.py                       # HEART/GRACE эвристические расчеты
+├── tests/
+│   └── unit/
+│       └── test_rules.py                   # Unit-тест для rule-based блока
+├── .env.example                            # Пример переменных окружения моделей
+├── .gitattributes                          # LF для .sh файлов
+├── .gitignore                              # Исключения локальных данных/артефактов
+├── requirements.txt                        # Зависимости Python
 └── README.md
 ```
 
-## Contributing / Development
+## Ограничения и дисклеймер
 
-Чтобы развивать проект:
-1. **Добавьте узел в граф**: В `nodes.py` — новая функция, в `graph.py` — add_node и add_edge.
-2. **Улучшите RAG**: Добавьте больше гайдлайнов в `data/` → rerun `rag_setup.py`.
-3. **Интегрируйте ML**: В `tools.py` — XGBoost для scores; обучите на датасетах (Kaggle ACS).
-4. **Тесты**: `pytest tests/` — покрытие ≥80% для nodes и tools.
-5. **Метрики**: Добавьте evaluation скрипт (AUC, Sensitivity) на синтетических данных (SDV библиотека).
-6. **Дорожная карта**:
-   - Короткий срок: Добавить multi-agent (отдельный агент для ЭКГ-анализа с vision LLM).
-   - Средний: Перейти с CSV на SQLite/PostgreSQL для scalability.
-   - Долгий: Fine-tune LLM на медицинских датасетах (MIMIC-IV); интеграция с реальными EHR API.
-   - Улучшения: Human-in-the-loop (breakpoint в графе), bias checks (SHAP).
-
-
-## License
-
-MIT License. См. LICENSE файл.
-
-## Disclaimers
-
-- Это не медицинское ПО. Не используйте для реальной диагностики — только для образовательных/исследовательских целей.
-- Соответствуйте регуляциям (HIPAA/GDPR для данных пациентов).
-- Источники: Опирайтесь на актуальные гайдлайны; проект не несёт ответственности за ошибки.
+- Это прототип для исследований/обучения, не медицинское изделие.
+- Не использовать для реальной диагностики и назначения лечения.
+- Результаты требуют интерпретации врачом.
