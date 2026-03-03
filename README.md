@@ -31,13 +31,18 @@
 
 ```mermaid
 graph TD
-    A[CLI input] --> B[parse_input]
-    B --> C[rule_check]
-    C -->|route_to_llm=true| D[rag_retrieval]
-    D --> E[llm_assess]
-    C -->|route_to_llm=false| F[output_save]
-    E --> F
-    F --> G[JSON output + patients.csv]
+    A[User → Streamlit/CLI] --> B[LangGraph Workflow]
+    B --> C[Parse Input]
+    C --> D[Rule Check]
+    D -->|Obvious High Risk| E[Output & Save]
+    D -->|Unclear → LLM| F[RAG Retrieval]
+    F --> G[LLM Assessment]
+    G --> E
+    E --> B[Display Result]
+
+    I[patients.csv] <--> E
+    J[Guidelines DB] <--> F
+    K[Ollama LLM] <--> G
 ```
 
 ### Целевая (будущая) схема
