@@ -39,7 +39,7 @@ graph TD
 
 ### Компоненты:
 - **LangGraph**: Оркестратор. State: TypedDict с полями (patient_data: dict, rag_context: str, db_results: list, risk: float, explanation: str). Узлы: parse_input, rule_check, rag_retrieval, llm_assess, output_save. Рёбра: conditional (на основе риска).
-- **LLM**: Локальная модель через Ollama (рекомендуется DeepSeek-R1:7b или MedGemma-27B). Используется для: парсинга текста, оценки риска, генерации объяснений. Промпты: chain-of-thought с few-shot примерами.
+- **LLM**: Локальная модель через Ollama (рекомендуется `qwen2.5:7b-instruct` для стабильного JSON; для A/B можно сравнивать с `medgemma:latest` (отсутствует в ollama)). Используется для: парсинга текста, оценки риска, генерации объяснений.
 - **RAG**: Для интеграции гайдлайнов (ESC/AHA). Эмбеддер: sentence-transformers.all-MiniLM-L6-v2. Векторная БД: Chroma (локально). Retrieval: similarity_search с top-k=3.
 - **База пациентов**: CSV-файл (patients.csv) через Pandas. Столбцы: id, name, symptoms_json, ecg_desc, troponin, hr, bp, risk_level, explanation, timestamp. Операции: append, search (pandas.query + семантический через FAISS для симптомов).
 - **UI**: Streamlit для веб-интерфейса. Страницы: ввод данных, оценка риска, история пациентов (с фильтрами и поиском).
@@ -89,17 +89,37 @@ pydantic
 ollama  # Если не установлен глобально
 ```
 
-- **Ollama**: Установите локально (ollama.com). Запустите модель: `ollama pull deepseek-r1:7b`.
+- **Ollama**: Установите локально (ollama.com). Скачайте модели:
+  - `ollama pull qwen2.5:7b-instruct`
+  - `ollama pull medgemma:latest`
 - **Гайдлайны для RAG**: Скачайте PDF (ESC 2025 ACS guidelines) в `data/guidelines/`. Запустите скрипт `src/infrastructure/rag_setup.py` для создания векторной БД.
 
 ## Usage
 
-### Локальный запуск:
-1. Запустите Ollama: `ollama serve`.
-2. Запустите Streamlit: `streamlit run src/frontend/app.py`.
-3. Откройте в браузере: http://localhost:8501.
-4. Вводите данные пациента → "Оценить риск" → система пройдёт по графу → покажет риск + объяснение + сохранит в `data/patients.csv`.
-5. Вкладка "История": Поиск по фильтрам (имя, риск, дата) или семантически ("похожие на высокий тропонин").
+### Локальный запуск (console-first):
+1. Создайте seed для RAG (один раз): `python -m src.infrastructure.rag.rag_setup`.
+2. Опционально запустите Ollama: `ollama serve` (если не запущен, система перейдёт в fallback режим без LLM).
+3. Запустите оценку из консоли (single режим):
+   `python -m src.cli.main --mode single --model qwen2.5:7b-instruct --name Ivan --pain-type typical --ecg-changes "ST-depression" --troponin 0.12 --hr 102 --bp 130/85 --symptoms-text "давящая боль в груди 30 минут" --output data/last_result.json --require-llm`
+4. Для A/B сравнения двух моделей на одном кейсе:
+   `python -m src.cli.main --mode ab --model qwen2.5:7b-instruct --model-b medgemma:latest --name Ivan --pain-type typical --ecg-changes "ST-depression" --troponin 0.12 --hr 102 --bp 130/85 --symptoms-text "давящая боль в груди 30 минут" --output data/ab_result.json --require-llm --force-llm`
+5. На выходе будет JSON с риском, объяснением, `record_id`, `llm_used` и названием модели; запись сохранится в `data/patients.csv`, а также в файл `--output`.
+6. Web UI можно добавить отдельно (например, на Streamlit), используя тот же `src.core.graph`.
+7. Если `langgraph`/`pandas` не установлены, доступен упрощённый fallback-пайплайн (invoke + CSV) для быстрого старта.
+8. Для принудительного прохода через LLM даже в high-risk rule-cases используйте `--force-llm`.
+9. Для строго LLM-режима используйте `--require-llm` (если Ollama недоступен, команда завершится с ошибкой вместо fallback).
+
+### Быстрые скрипты (PowerShell):
+- Запуск оценки: `.\scripts\run.ps1 -RequireLlm -ForceLlm`
+- A/B сравнение: `.\scripts\run.ps1 -Mode ab -Model qwen2.5:7b-instruct -ModelB qwen2.5:3b-instruct -RequireLlm -ForceLlm -Output data/ab_result.json`
+- Запуск тестов: `.\scripts\test.ps1`
+- Установка зависимостей + тесты: `.\scripts\test.ps1 -InstallDeps`
+
+### Быстрые скрипты (Bash, Linux/macOS/Windows через Git Bash/WSL):
+- Запуск оценки: `./scripts/run.sh --require-llm --force-llm`
+- A/B сравнение: `./scripts/run.sh --mode ab --model qwen2.5:7b-instruct --model-b qwen2.5:3b-instruct --require-llm --force-llm --output data/ab_result.json`
+- Запуск тестов: `./scripts/test.sh`
+- Установка зависимостей + тесты: `./scripts/test.sh --install-deps`
 
 ### Пример вызова графа из кода (для тестов):
 ```python
@@ -131,9 +151,9 @@ LangGraph-ACS-Diagnosis/
 │   │   ├── db/                 # CSV операции (Pandas)
 │   │   │   ├── models.py       # Pydantic модели для пациентов
 │   │   │   └── repository.py   # CRUD: save_patient, search_patients
-│   │   └── rag/                # RAG setup (Chroma, embedder)
-│   └── frontend/               # UI
-│       └── app.py              # Streamlit приложение
+│   │   └── rag/                # RAG setup/retrieval
+│   └── cli/                    # Console entrypoint
+│       └── main.py             # python -m src.cli.main
 ├── tests/                      # Тесты
 │   ├── unit/                   # Тесты nodes, tools (pytest)
 │   └── integration/            # Тесты графа + UI
@@ -157,7 +177,6 @@ LangGraph-ACS-Diagnosis/
    - Долгий: Fine-tune LLM на медицинских датасетах (MIMIC-IV); интеграция с реальными EHR API.
    - Улучшения: Human-in-the-loop (breakpoint в графе), bias checks (SHAP).
 
-Pull requests welcome! Следуйте PEP8, добавляйте тесты. Для генерации кода другими агентами: Используйте этот README как спецификацию — опишите задачу (e.g., "Добавь узел для GRACE score в graph.py").
 
 ## License
 

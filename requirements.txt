@@ -1,0 +1,5 @@
+langgraph
+pydantic
+pandas
+pytest
+ollama

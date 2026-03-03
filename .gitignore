@@ -1,0 +1,44 @@
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Local runtime data and generated outputs
+data/patients.csv
+data/*.json
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+data/chroma/
+data/faiss/
+
+# Jupyter and misc logs
+.ipynb_checkpoints/
+*.log
