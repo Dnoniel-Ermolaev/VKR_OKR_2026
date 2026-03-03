@@ -23,7 +23,7 @@
 
 ```mermaid
 graph TD
-    A[User → Streamlit] --> B[LangGraph Workflow]
+    A[User → Streamlit/CLI] --> B[LangGraph Workflow]
     B --> C[Parse Input]
     C --> D[Rule Check]
     D -->|Obvious High Risk| E[Output & Save]
