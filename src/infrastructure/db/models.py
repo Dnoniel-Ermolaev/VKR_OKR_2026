@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, Literal
+from typing import Any, Dict, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -11,11 +11,30 @@ RiskLevel = Literal["low", "medium", "high"]
 
 class PatientData(BaseModel):
     name: str = Field(min_length=1)
+    age: int | None = Field(default=None, ge=0, le=120)
+    gender: Literal["male", "female", "unknown"] = "unknown"
+    admission_time: str = ""
+    pain_onset_time: str = ""
     pain_type: Literal["typical", "atypical", "none"]
+    pain_description: str = ""
     ecg_changes: str = Field(min_length=1)
     troponin: float = Field(ge=0)
     hr: int = Field(gt=0)
     bp: str = Field(min_length=3, description="Format: systolic/diastolic")
+    spo2: float | None = Field(default=None, ge=0, le=100)
+    rr: int | None = Field(default=None, ge=0, le=80)
+    glucose: float | None = Field(default=None, ge=0)
+    creatinine: float | None = Field(default=None, ge=0)
+    ast_alt_ckmb: Dict[str, float] = Field(default_factory=dict)
+    lipid_profile: Dict[str, float] = Field(default_factory=dict)
+    potassium_sodium_magnesium: Dict[str, float] = Field(default_factory=dict)
+    echo_dkg_results: str = ""
+    mri_results: str = ""
+    ct_coronary: str = ""
+    killip_class: str = ""
+    interventions: list[str] = Field(default_factory=list)
+    medications: list[str] = Field(default_factory=list)
+    vital_signs: list[Dict[str, Any]] = Field(default_factory=list)
     symptoms_text: str = ""
 
     @field_validator("bp")

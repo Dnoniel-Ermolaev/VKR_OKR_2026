@@ -14,6 +14,9 @@ def evaluate_hard_rules(patient_data: Dict[str, object]) -> Tuple[float, str, Li
     ecg = str(patient_data.get("ecg_changes", "")).lower()
     pain_type = str(patient_data.get("pain_type", "")).lower()
     hr = int(patient_data.get("hr", 0))
+    creatinine = patient_data.get("creatinine")
+    spo2 = patient_data.get("spo2")
+    killip = str(patient_data.get("killip_class", "")).upper()
 
     if "st-elevation" in ecg:
         reasons.append("ECG indicates ST-elevation (possible STEMI).")
@@ -36,6 +39,15 @@ def evaluate_hard_rules(patient_data: Dict[str, object]) -> Tuple[float, str, Li
     if hr > 110:
         risk += 0.1
         reasons.append("Tachycardia > 110 bpm.")
+    if isinstance(creatinine, (int, float)) and float(creatinine) >= 140:
+        risk += 0.1
+        reasons.append("Elevated creatinine suggests higher risk.")
+    if isinstance(spo2, (int, float)) and float(spo2) < 90:
+        risk += 0.1
+        reasons.append("Hypoxemia (SpO2 < 90%).")
+    if killip in {"III", "IV", "3", "4"}:
+        risk += 0.15
+        reasons.append("High Killip class.")
 
     if risk >= 0.75:
         return min(risk, 0.95), "high", reasons, False

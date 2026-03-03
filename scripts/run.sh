@@ -11,6 +11,7 @@ TROPONIN="0.12"
 HR="102"
 BP="130/85"
 SYMPTOMS_TEXT="давящая боль в груди 30 минут"
+FREE_TEXT=""
 OUTPUT="data/last_result.json"
 REQUIRE_LLM=0
 FORCE_LLM=0
@@ -27,6 +28,7 @@ while [[ $# -gt 0 ]]; do
     --hr) HR="$2"; shift 2 ;;
     --bp) BP="$2"; shift 2 ;;
     --symptoms-text) SYMPTOMS_TEXT="$2"; shift 2 ;;
+    --free-text) FREE_TEXT="$2"; shift 2 ;;
     --output) OUTPUT="$2"; shift 2 ;;
     --require-llm) REQUIRE_LLM=1; shift ;;
     --force-llm) FORCE_LLM=1; shift ;;
@@ -61,6 +63,7 @@ CMD=(
   --hr "$HR"
   --bp "$BP"
   --symptoms-text "$SYMPTOMS_TEXT"
+  --free-text "$FREE_TEXT"
   --output "$OUTPUT"
 )
 
