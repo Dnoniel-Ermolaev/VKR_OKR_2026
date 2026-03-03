@@ -35,6 +35,7 @@ graph TD
     I[patients.csv] <--> E
     J[Guidelines DB] <--> F
     K[Ollama LLM] <--> G
+```
 
 ### Компоненты:
 - **LangGraph**: Оркестратор. State: TypedDict с полями (patient_data: dict, rag_context: str, db_results: list, risk: float, explanation: str). Узлы: parse_input, rule_check, rag_retrieval, llm_assess, output_save. Рёбра: conditional (на основе риска).
