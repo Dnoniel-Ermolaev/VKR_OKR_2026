@@ -5,131 +5,175 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Dict, Any
 
 from src.core.graph import graph
 
+"""
+Памятка по добавлению нового свойства для парсинга:
+1. CLIParser._setup_patient_args()
+2. PATIENT_FIELDS в классе data_payload_Builder
+3. REQUIRED_FIELDS по необходимости
+"""
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Console runner for ACS diagnosis prototype")
-    parser.add_argument("--name")
-    parser.add_argument("--pain-type", choices=["typical", "atypical", "none"])
-    parser.add_argument("--ecg-changes")
-    parser.add_argument("--troponin", type=float)
-    parser.add_argument("--hr", type=int)
-    parser.add_argument("--bp", help="Format systolic/diastolic, e.g. 120/80")
-    parser.add_argument("--age", type=int)
-    parser.add_argument("--gender", choices=["male", "female", "unknown"], default="unknown")
-    parser.add_argument("--spo2", type=float)
-    parser.add_argument("--glucose", type=float)
-    parser.add_argument("--creatinine", type=float)
-    parser.add_argument("--killip-class", default="")
-    parser.add_argument("--echo-dkg-results", default="")
-    parser.add_argument("--admission-time", default="")
-    parser.add_argument("--pain-onset-time", default="")
-    parser.add_argument("--symptoms-text", default="")
-    parser.add_argument("--free-text", default="", help="Raw history text for LLM parsing")
-    parser.add_argument(
-        "--output",
-        default="result.json",
-        help="Path to output JSON file (default: result.json)",
-    )
-    parser.add_argument(
-        "--require-llm",
-        action="store_true",
-        help="Fail if LLM/Ollama is unavailable instead of using fallback",
-    )
-    parser.add_argument(
-        "--force-llm",
-        action="store_true",
-        help="Always run LLM branch even for obvious high-risk rule cases",
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["single", "ab"],
-        default="single",
-        help="single: one model, ab: compare two models on one case",
-    )
-    parser.add_argument(
-        "--model",
-        default=os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct"),
-        help="Primary Ollama model for LLM assessment",
-    )
-    parser.add_argument(
-        "--model-b",
-        default=os.getenv("OLLAMA_MODEL_B", "qwen2.5:3b-instruct"),
-        help="Second model for A/B mode",
-    )
-    return parser
+class CLIParser:
 
+    """Парсим аргументы из командной строки"""
 
-def _has_structured_input(args: argparse.Namespace) -> bool:
-    required = [args.name, args.pain_type, args.ecg_changes, args.troponin, args.hr, args.bp]
-    return all(value is not None for value in required)
+    def __init__(self):
+        self.parser = argparse.ArgumentParser(description="Console runner for ACS diagnosis system")
+        self._setup_app_args()
+        self._setup_patient_args()
 
+    def _setup_app_args(self):
+        """Настройки самого приложения (модели, файлы, режимы)"""
 
-def _run_once(args: argparse.Namespace, model_name: str) -> dict:
-    has_structured = _has_structured_input(args)
-    if not has_structured and not str(args.free_text).strip():
-        raise ValueError(
-            "Передайте либо полный набор структурированных полей "
-            "(name, pain-type, ecg-changes, troponin, hr, bp), либо --free-text."
+        parser_group = self.parser.add_argument_group("App Configuration")
+        parser_group.add_argument(
+            "--mode",
+            choices=["single", "ab"],
+            default="single",
+            help="single: one model, ab: compare two models on one case",
+        )
+        parser_group.add_argument(
+            "--model", 
+            default=os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct"),
+            help="Primary Ollama model for LLM assessment"
+        )
+        parser_group.add_argument(
+            "--model-b", 
+            default=os.getenv("OLLAMA_MODEL_B", "qwen2.5:3b-instruct"),
+            help="Second model for A/B testing"
+        )
+        parser_group.add_argument(
+            "--output",
+            default="result.json",
+            help="Path to output JSON file (default: result.json)",
+        )
+        parser_group.add_argument(
+            "--require-llm",
+            action="store_true",
+            help="Fail if LLM/Ollama is unavailable instead of using fallback",
+        )
+        parser_group.add_argument(
+            "--force-llm",
+            action="store_true",
+            help="Always run LLM branch even for obvious high-risk rule cases",
         )
 
-    payload = {
-        "patient_data": (
-            {
-                "name": args.name,
-                "pain_type": args.pain_type,
-                "ecg_changes": args.ecg_changes,
-                "troponin": args.troponin,
-                "hr": args.hr,
-                "bp": args.bp,
-                "age": args.age,
-                "gender": args.gender,
-                "spo2": args.spo2,
-                "glucose": args.glucose,
-                "creatinine": args.creatinine,
-                "killip_class": args.killip_class,
-                "echo_dkg_results": args.echo_dkg_results,
-                "admission_time": args.admission_time,
-                "pain_onset_time": args.pain_onset_time,
-                "symptoms_text": args.symptoms_text,
-            }
-            if has_structured
-            else {}
-        ),
-        "free_text": str(args.free_text or ""),
-        "require_llm": args.require_llm,
-        "force_llm": args.force_llm,
-        "llm_model": model_name,
-    }
-    result = graph.invoke(payload)
-    return {
-        "model": model_name,
-        "risk": round(float(result.get("risk", 0.0)), 3),
-        "risk_level": result.get("risk_level"),
-        "explanation": result.get("explanation"),
-        "record_id": result.get("save_id"),
-        "llm_used": bool(result.get("llm_used", False)),
-        "parse_confidence": result.get("parse_confidence"),
-        "missing_fields": result.get("missing_fields", []),
-        "route_confidence": result.get("route_confidence"),
-        "next_step": result.get("next_step"),
-        "triage_category": result.get("triage_category"),
-        "route_reason": result.get("route_reason"),
-    }
+    def _setup_patient_args(self):
+        """Медицинские данные пациента"""
+
+        parser_group = self.parser.add_argument_group("Patient Data")
+        # Имена аргументов должны совпадать с ключами Pydantic-модели PatientData!
+        parser_group.add_argument("--name")
+        parser_group.add_argument("--age", type=int)
+        parser_group.add_argument("--pain-type", choices=["typical", "atypical", "none"])
+        parser_group.add_argument("--troponin", type=float)
+        parser_group.add_argument("--ecg-changes")
+        parser_group.add_argument("--hr", type=int)
+        parser_group.add_argument("--bp", help="Format systolic/diastolic, e.g. 120/80")
+        parser_group.add_argument("--gender", choices=["male", "female", "unknown"], default="unknown")
+        parser_group.add_argument("--spo2", type=float)
+        parser_group.add_argument("--glucose", type=float)
+        parser_group.add_argument("--creatinine", type=float)
+        parser_group.add_argument("--killip-class", default="")
+        parser_group.add_argument("--echo-dkg-results", default="")
+        parser_group.add_argument("--admission-time", default="")
+        parser_group.add_argument("--pain-onset-time", default="")
+        parser_group.add_argument("--symptoms-text", default="")
+        parser_group.add_argument("--free-text", default="")
+
+    def parse(self) -> argparse.Namespace:
+        return self.parser.parse_args()
+
+
+class data_payload_Builder:
+    """Трансформирует сырые аргументы в payload для LangGraph"""
+    
+    PATIENT_FIELDS = [
+        "name", "pain_type", "ecg_changes", "troponin", "hr", "bp", 
+        "age", "gender", "spo2", "glucose", "creatinine", "killip_class", 
+        "echo_dkg_results", "admission_time", "pain_onset_time", "symptoms_text"
+    ]
+
+    REQUIRED_FIELDS = ["name", "pain_type", "ecg_changes", "troponin", "hr", "bp"]
+
+    @classmethod
+    def build(cls, raw_data: Dict[str, Any], app_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Собирает итоговый словарь для отправки в граф"""
+        
+        patient_data = {
+            field: raw_data.get(field) 
+            for field in cls.PATIENT_FIELDS 
+            if raw_data.get(field) is not None
+        }
+
+        has_structured = all(req_field in patient_data for req_field in cls.REQUIRED_FIELDS)
+
+        free_text = str(raw_data.get("free_text", "")).strip()
+
+        if not has_structured and not free_text:
+            raise ValueError(
+                f"Ошибка: Передайте либо полный набор полей ({', '.join(cls.REQUIRED_FIELDS)}), "
+                f"либо используйте параметр --free-text."
+            )
+
+        return {
+            "patient_data": patient_data if has_structured else {},
+            "free_text": free_text,
+            "require_llm": app_config.get("require_llm", False),
+            "force_llm": app_config.get("force_llm", False),
+            "llm_model": app_config.get("llm_model"),
+        }
+
+
+class workflow_runner:
+    """Исполнитель"""
+
+    @staticmethod
+    def run_single(raw_data: Dict[str, Any], app_config: Dict[str, Any]) -> dict:
+        payload = data_payload_Builder.build(raw_data, app_config)
+        result = graph.invoke(payload)
+        
+        return {
+            "model": app_config.get("llm_model"),
+            "risk": round(float(result.get("risk", 0.0)), 3),
+            "risk_level": result.get("risk_level"),
+            "explanation": result.get("explanation"),
+            "record_id": result.get("save_id"),
+            "llm_used": bool(result.get("llm_used", False)),
+            "parse_confidence": result.get("parse_confidence"),
+            "missing_fields": result.get("missing_fields", []),
+            "route_confidence": result.get("route_confidence"),
+            "next_step": result.get("next_step"),
+            "triage_category": result.get("triage_category"),
+            "route_reason": result.get("route_reason"),
+        }
 
 
 def main() -> None:
-    parser = build_parser()
-    args = parser.parse_args()
+
+    cli_parser = CLIParser()
+    args = cli_parser.parse()
+
+    raw_data = vars(args)
+    app_config = {
+        "require_llm": args.require_llm,
+        "force_llm": args.force_llm,
+    }
 
     try:
         if args.mode == "single":
-            printable = _run_once(args, args.model)
+            app_config["llm_model"] = args.model
+            printable = workflow_runner.run_single(raw_data, app_config)
         else:
-            result_a = _run_once(args, args.model)
-            result_b = _run_once(args, args.model_b)
+            app_config["llm_model"] = args.model
+            result_a = workflow_runner.run_single(raw_data, app_config)
+            
+            app_config["llm_model"] = args.model_b
+            result_b = workflow_runner.run_single(raw_data, app_config)
+
             printable = {
                 "mode": "ab",
                 "patient_name": args.name,
