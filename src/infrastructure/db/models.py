@@ -1,7 +1,11 @@
+# src/infrastucture/db/models.py
 from __future__ import annotations
-
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal
+
+from sqlalchemy import ForeignKey, String, Integer, DateTime, Date
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from src.infrastructure.db.database import Base
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -83,3 +87,26 @@ class PatientRecord(BaseModel):
             risk_level=risk_level,
             explanation=explanation,
         )
+
+""" Классы для использовани ORM SQLAlchemy """
+ # Наследуемся от Base
+class Patient(Base):
+    __tablename__ = "patients"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(150))
+    birth_date: Mapped[datetime.date] = mapped_column(Date) 
+    gender: Mapped[str] = mapped_column(String(10))
+
+    # Связь "Один ко многим"
+    visits = relationship("Visit", back_populates="patient", cascade="all, delete-orphan")
+
+class Visit(Base):
+    __tablename__ = "visits"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"))
+    admission_time: Mapped[datetime] = mapped_column(DateTime) 
+    
+     # Связь "Многие к одному"
+    patient = relationship("Patient", back_populates="visits")
