@@ -4,7 +4,7 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     display: flex; /* Делит экран на колонки */
     height: 100vh; /* Высота 100% экрана */
-    background-color: #f8f9fa; /* Очень светло-серый фон */
+    background-color: #f8f9fa;
     color: #333;
 }
 
@@ -13,7 +13,7 @@ body {
     width: 20%;
     min-width: 250px;
     max-width: 40%;
-    background-color: #f0f4f8; /* Тот самый новый цвет, гармонирующий с верхом */
+    background-color: #f0f4f8;
     padding: 20px;
     display: flex;
     flex-direction: column; /* Важно: элементы идут сверху вниз */
@@ -58,7 +58,7 @@ body {
     padding-right: 5px; /* Немного места для ползунка прокрутки */
 }
 
-/* Прячем стандартный уродливый скроллбар браузера для красоты (работает в Chrome/Edge) */
+/* Прячем стандартный скроллбар браузера для красоты (работает в Chrome/Edge) */
 .patient-list::-webkit-scrollbar {
     width: 6px;
 }
@@ -69,7 +69,7 @@ body {
 
 /* --- КАРТОЧКА ПАЦИЕНТА --- */
 .patient-card {
-    background-color: #ffffff; /* Белая карточка на сером фоне сайдбара */
+    background-color: #ffffff;
     border: 1px solid #e2e8f0;
     border-radius: 6px;
     padding: 12px;
@@ -94,7 +94,7 @@ body {
     font-size: 0.75em;
     color: #64748b;
     margin-bottom: 6px;
-    font-family: monospace; /* Моноширинный шрифт для цифр выглядит научнее */
+    font-family: monospace;
 }
 
 .patient-card-name {
@@ -105,7 +105,7 @@ body {
 
 /* --- Кнопка поиска --- */
 .search-btn {
-    background-color: #334155; /* Темно-серый, почти синий (строгий) */
+    background-color: #334155;
     color: white;
     border: none;
     padding: 10px 15px;
@@ -228,7 +228,7 @@ body {
 #consoleInput {
     width: 100%;
     height: 120px;
-    font-family: monospace; /* Шрифт как у программистов */
+    font-family: monospace;
     padding: 10px;
     margin-bottom: 15px;
     border: 1px solid #cbd5e1;
@@ -237,7 +237,7 @@ body {
 
 .console-output {
     background-color: #1e293b;
-    color: #10b981; /* Зеленый текст на черном фоне */
+    color: #10b981;
     padding: 15px;
     border-radius: 4px;
     margin-top: 20px;
@@ -261,7 +261,7 @@ body {
 
 /* --- ГЛОБАЛЬНЫЙ КОНТЕКСТ ПАЦИЕНТА (Плашка сверху) --- */
 .active-patient-banner {
-    background-color: #cce1eb; /* Твой выбранный цвет! */
+    background-color: #cce1eb;
     color: #1e293b;
     padding: 10px 20px;
     font-size: 0.95em;
@@ -286,9 +286,9 @@ body {
 
 /* --- ПОДСВЕТКА ВЫБРАННОГО ПАЦИЕНТА В СПИСКЕ --- */
 .patient-card.selected {
-    background-color: #e0f2fe; /* Нежно-голубой фон */
-    border-color: #38bdf8; /* Голубая рамка */
-    box-shadow: 0 0 0 2px #bae6fd; /* Эффект свечения */
+    background-color: #e0f2fe;
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 2px #bae6fd;
 }
 
 /* --- ВЕРСТКА ВЛАДКИ "ПАЦИЕНТ" (Две колонки) --- */
@@ -366,4 +366,11 @@ body {
 
 .close-btn:hover {
     color: #ef4444;
+}
+
+/* Служебный класс для отключения выделения текста во всём приложении (исп. при перетаскивании границы)*/
+.dragging-active {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    cursor: col-resize !important;
 }

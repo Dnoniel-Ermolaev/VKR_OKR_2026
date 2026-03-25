@@ -9,7 +9,7 @@
 </head>
 <body>
 
-    <!-- Левая панель-->
+    <!-- Левая панель списка пациентов-->
     <div class="sidebar" id="sidebar">
         <h2>ПАЦИЕНТЫ</h2>
         
@@ -30,33 +30,30 @@
         
     </div>
 
-
-
+    <!-- Разделитель -->
      <div class="resizer" id="dragMe"></div>
 
     <!-- Правая часть -->
-<!-- ПРАВАЯ ЧАСТЬ -->
     <div class="main-wrapper">
         
-        <!-- НОВОЕ: Панель выбранного пациента (Глобальный контекст) -->
+        <!-- Панель выбранного пациента (Глобальный контекст) -->
         <div class="active-patient-banner" id="activePatientBanner">
             <span id="activePatientText">Пациент не выбран</span>
             <button id="unselectBtn" style="display: none;" onclick="unselectPatient()">✕ Сбросить</button>
         </div>
 
-        <!-- ВЕРХНЯЯ ПАНЕЛЬ С ВКЛАДКАМИ -->
+        <!-- Навигационная панель-->
         <div class="top-nav">
-            <!-- Добавили новую вкладку первой -->
             <button class="tab-btn active" onclick="switchTab('main-tab', this)">Оценка ОКС</button>
             <button class="tab-btn" onclick="switchTab('patient-tab', this)">Пациент</button>
             <button class="tab-btn" onclick="switchTab('settings-tab', this)">Настройки</button>
             <button class="tab-btn" onclick="switchTab('dev-tab', this)">Консоль</button>
         </div>
 
-        <!-- РАБОЧАЯ ОБЛАСТЬ -->
+        <!-- Рабочая область -->
         <div class="content-area">
 
-            <!-- ВКЛАДКА: Оценка ОКС (бывший Главный экран) -->
+            <!-- Оценка ОКС -->
             <div id="main-tab" class="tab-content active">
                 <h3>Оценка риска ОКС</h3>
                 <p class="subtitle">Введите базовые параметры для расчета</p>
@@ -80,43 +77,43 @@
                 <pre id="resultOutput" class="console-output">Здесь появится результат...</pre>
             </div>
 
-            <!-- НОВАЯ ВКЛАДКА: ПАЦИЕНТ -->
+            <!-- Вкладка: Пациент -->
             <div id="patient-tab" class="tab-content">
                 <div class="patient-dashboard-grid">
                     <!-- Левая часть: Визиты -->
                     <div class="dashboard-panel" id="visitsPanel">
-                        <div class="empty-state">Выберите пациента слева для просмотра визитов</div>
+                        <div class="empty-state">Выберите пациента для просмотра визитов</div>
                     </div>
                     
                     <!-- Правая часть: Анализы и статистика -->
                     <div class="dashboard-panel" id="statsPanel">
-                        <div class="empty-state">Выберите пациента слева для просмотра анализов</div>
+                        <div class="empty-state">Выберите пациента для просмотра анализов</div>
                     </div>
                 </div>
             </div>
 
-            <!-- ВКЛАДКА: Настройки (НСИ) -->
+            <!-- Вкладка: Настройки -->
             <div id="settings-tab" class="tab-content">
-                <h2 style="color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Нормативно-справочная информация (НСИ)</h2>
+                <h2 style="color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Нормативно-справочная информация</h2>
                 
                 <div style="display: flex; gap: 20px; margin-top: 20px;">
                     <!-- Блок: Редактирование -->
                     <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; flex: 1;">
                         <h4 style="margin-top: 0; color: #3b82f6;">Изменить пациента</h4>
-                        <p style="color: #64748b; font-size: 0.9em;">Откройте справочник пациентов для редактирования ФИО, даты рождения или пола.</p>
+                        <p style="color: #64748b; font-size: 0.9em;">Откройте справочник для редактирования карточки пациента.</p>
                         <button class="action-btn" onclick="openNsiModal('edit')">Открыть справочник</button>
                     </div>
 
                     <!-- Блок: Удаление -->
                     <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; flex: 1;">
                         <h4 style="margin-top: 0; color: #ef4444;">Удалить пациента</h4>
-                        <p style="color: #64748b; font-size: 0.9em;">Безвозвратное удаление пациента и всей истории его визитов и анализов.</p>
+                        <p style="color: #64748b; font-size: 0.9em;">Безвозвратное удаление пациента и всех его данных.</p>
                         <button class="action-btn" style="background-color: #ef4444;" onclick="openNsiModal('delete')">Открыть справочник</button>
                     </div>
                 </div>
             </div>
 
-            <!-- ВКЛАДКА: Консоль -->
+            <!-- Вкладка: Консоль -->
             <div id="dev-tab" class="tab-content">
                 <h3>Эмулятор консоли</h3>
                 <p class="subtitle">Вставьте команду со слешами (\). Бэкенд сам соберет её в одну строку.</p>
@@ -131,11 +128,10 @@
                 <pre id="consoleOutput" class="console-output">Ожидание команды...</pre>
             </div>
 
-
         </div>
     </div>
 
-     <!-- МОДАЛЬНОЕ ОКНО ДЛЯ ДОБАВЛЕНИЯ ПАЦИЕНТА -->
+     <!-- Модальное окно для добавления пациента -->
     <div id="patientModal" class="modal">
         <div class="modal-content" style="width: 400px;">
             <span class="close-btn" onclick="closeAddPatientModal()">&times;</span>
@@ -166,7 +162,7 @@
     </div>
 
 
-    <!-- МОДАЛЬНОЕ ОКНО ДЛЯ ДОБАВЛЕНИЯ ВИЗИТА -->
+    <!-- Модальное окно добавления визита -->
     <div id="visitModal" class="modal">
         <div class="modal-content">
             <span class="close-btn" onclick="closeVisitModal()">&times;</span>
@@ -182,7 +178,7 @@
                 
                 <label style="font-size: 0.9em; color: #64748b;">Дата визита:</label>
                 <label style="font-size: 0.9em; color: #64748b;">Дата и время визита:</label>
-                <!-- ИСПРАВЛЕН ТИП INPUT -->
+
                     <input type="datetime-local" id="modalVisitDate">
                 
                 <button class="action-btn" style="margin-top: 15px;" onclick="submitNewVisit()">Сохранить визит</button>
@@ -191,7 +187,7 @@
     </div>
 
 
-<!-- МОДАЛЬНОЕ ОКНО: СПРАВОЧНИК НСИ (Таблица пациентов) -->
+<!-- Модальное окно справочника пациентов (НСИ)-->
     <div id="nsiModal" class="modal">
         <div class="modal-content" style="width: 800px; max-height: 80vh; display: flex; flex-direction: column;">
             <span class="close-btn" onclick="document.getElementById('nsiModal').style.display='none'">&times;</span>

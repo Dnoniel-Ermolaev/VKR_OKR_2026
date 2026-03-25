@@ -1,168 +1,8 @@
-let currentPatient = null; // Здесь будет храниться объект выбранного пациента
+// Тип Object - изменяется при выборе пациента.
+// Хранит базовую информацию, требуемую для отображения на форме 
+let currentPatient = null;
 
-// Логика переключения вкладок
-function switchTab(tabId, btnElement) {
-
-    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    
-    document.getElementById(tabId).classList.add('active');
-    btnElement.classList.add('active');
-}
-
-// Логика поиска пациентов
-function searchPatient() {
-
-    const rawInput = document.getElementById('searchInput').value.trim();
-    const searchMessage = document.getElementById('searchMessage');
-    
-    const cards = document.querySelectorAll('.patient-card');
-
-    if (rawInput === "") {
-        cards.forEach(card => card.style.display = "block");
-        searchMessage.style.display = "none";
-        return; // Завершаем функцию
-    }
-
-    const query = rawInput.toLowerCase();
-    
-    const isIdSearch = /^\d$/.test(query.charAt(0)); 
-    
-    let matchCount = 0; // Счетчик найденных пациентов
-
-    cards.forEach(card => {
-
-        const idElement = card.querySelector('.patient-card-header span:first-child');
-        const nameElement = card.querySelector('.patient-card-name');
-        
-        let matchFound = false;
-
-        if (isIdSearch) {
-            const rawIdText = idElement.textContent; // "ID: 10042"
-            const idNumber = rawIdText.replace(/\D/g, ''); // Удаляем всё, кроме цифр -> "10042"
-            
-            if (idNumber.startsWith(query)) {
-                matchFound = true;
-            }
-        } else {
-            const nameText = nameElement.textContent.toLowerCase();
-            if (nameText.includes(query)) {
-                matchFound = true;
-            }
-        }
-
-        if (matchFound) {
-            card.style.display = "block";
-            matchCount++;
-        } else {
-            card.style.display = "none";
-        }
-    });
-
-    if (matchCount === 0) {
-        // Никого не нашли
-        const searchType = isIdSearch ? "ID" : "ФИО";
-        searchMessage.textContent = `Пациент с ${searchType} "${rawInput}" не найден.`;
-        searchMessage.style.display = "block";
-    } else {
-        // Нашли кого-то, прячем сообщение об ошибке
-        searchMessage.style.display = "none";
-    }
-}
-
-// Поиск по нажатию клавиши Enter
-document.getElementById('searchInput').addEventListener('keypress', function(event) {
-    if (event.key === 'Enter') {
-        event.preventDefault(); // Отменяем стандартное поведение формы
-        searchPatient();        // Запускаем нашу функцию
-    }
-});
-
-// Отправка веб-формы в Python
-async function runAssessment() {
-    const outputBox = document.getElementById('resultOutput');
-    outputBox.innerText = "Загрузка..."; // Крутилка
-
-    const payload = {
-        name: document.getElementById('ptName').value,
-        pain_type: document.getElementById('ptPain').value,
-        ecg_changes: document.getElementById('ptEcg').value,
-        troponin: parseFloat(document.getElementById('ptTrop').value),
-        hr: parseInt(document.getElementById('ptHr').value),
-        bp: document.getElementById('ptBp').value,
-        free_text: ""
-    };
-
-    const response = await fetch('/api/assess', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-
-    const result = await response.json();
-    outputBox.innerText = JSON.stringify(result, null, 2);
-}
-
-async function runConsole() {
-    const outputBox = document.getElementById('consoleOutput');
-    outputBox.innerText = "Выполнение команды...";
-
-    const commandText = document.getElementById('consoleInput').value;
-
-    const response = await fetch('/api/console', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: commandText })
-    });
-
-    const result = await response.json();
-    outputBox.innerText = JSON.stringify(result, null, 2);
-}
-
-document.addEventListener('DOMContentLoaded', async function () {
-    const resizer = document.getElementById('dragMe');
-    const leftSide = document.getElementById('sidebar');
-
-    let x = 0;
-    let leftWidth = 0;
-
-    const mouseDownHandler = function (e) {
-        x = e.clientX;
-        leftWidth = leftSide.getBoundingClientRect().width;
-
-        document.addEventListener('mousemove', mouseMoveHandler);
-        document.addEventListener('mouseup', mouseUpHandler);
-        
-        resizer.classList.add('active');
-        document.body.style.cursor = 'col-resize';
-        
-        leftSide.style.userSelect = 'none';
-        leftSide.style.pointerEvents = 'none';
-    };
-
-    const mouseMoveHandler = function (e) {
-        const dx = e.clientX - x; // На сколько пикселей сдвинули мышь
-        const newLeftWidth = ((leftWidth + dx) * 100) / resizer.parentNode.getBoundingClientRect().width;
-        
-        leftSide.style.width = `${newLeftWidth}%`;
-    };
-
-    const mouseUpHandler = function () {
-        resizer.classList.remove('active');
-        document.body.style.cursor = 'default';
-        leftSide.style.userSelect = 'auto';
-        leftSide.style.pointerEvents = 'auto';
-        
-        document.removeEventListener('mousemove', mouseMoveHandler);
-        document.removeEventListener('mouseup', mouseUpHandler);
-    };
-
-    resizer.addEventListener('mousedown', mouseDownHandler);
-
-    // Загружаем пациентов
-    await loadPatientsFromDB();
-});
-
+// Заполнение списка пациентов при загрузке приложения
 async function loadPatientsFromDB() {
     const listContainer = document.getElementById('patientList');
     listContainer.innerHTML = "<p style='text-align:center; color:#94a3b8;'>Загрузка...</p>";
@@ -175,6 +15,8 @@ async function loadPatientsFromDB() {
         // Очищаем контейнер
         listContainer.innerHTML = "";
 
+        // Генерируем HTML для каждого пациента из базы
+// Генерируем HTML для каждого пациента из базы
         patients.forEach(p => {
             const cardHTML = `
                 <div class="patient-card" id="card-${p.id}" style="border-left-color: ${p.risk_color};" onclick="selectPatient(${p.id})">
@@ -192,21 +34,204 @@ async function loadPatientsFromDB() {
     }
 }
 
+// Логика переключения вкладок
+function switchTab(tabId, btnElement) {
 
-// логика выбора пациента
+    // Прячем все вкладки
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    
+    // Показываем нужную
+    document.getElementById(tabId).classList.add('active');
+    btnElement.classList.add('active');
+}
+
+// Логика поиска пациентов
+function searchPatient() {
+
+    // Получаем то, что ввел пользователь, и убираем лишние пробелы по краям
+    const rawInput = document.getElementById('searchInput').value.trim();
+    const searchMessage = document.getElementById('searchMessage');
+    
+    // Получаем список всех карточек пациентов на странице
+    const cards = document.querySelectorAll('.patient-card');
+
+    // Если поле пустое - показываем всех пациентов обратно и прячем сообщение
+    if (rawInput === "") {
+        cards.forEach(card => card.style.display = "block");
+        searchMessage.style.display = "none";
+        return;
+    }
+
+    const query = rawInput.toLowerCase(); // Переводим ввод в нижний регистр
+    
+    // Определяем тип поиска: по ID (цифры) или по ФИО (буквы) 
+    // charAt(0) берет первый символ. Регулярка /^\d$/ проверяет, цифра ли это.
+    const isIdSearch = /^\d$/.test(query.charAt(0)); 
+    
+    let matchCount = 0; // Счетчик найденных пациентов
+
+    // Проходимся циклом по каждой карточке
+    cards.forEach(card => {
+
+        const idElement = card.querySelector('.patient-card-header span:first-child');
+        const nameElement = card.querySelector('.patient-card-name');
+        
+        let matchFound = false;
+
+        if (isIdSearch) {
+            // Ищем по ID. Извлекаем только цифры из текста "ID: 10042" -> "10042"
+            const rawIdText = idElement.textContent;        // "ID: 10042"
+            const idNumber = rawIdText.replace(/\D/g, '');  // Удаляем всё, кроме цифр -> "10042"
+            
+            if (idNumber.startsWith(query)) {
+                matchFound = true;
+            }
+
+        } else {
+            // Ищем по ФИО (просто проверяем, есть ли подстрока)
+            const nameText = nameElement.textContent.toLowerCase();
+            if (nameText.includes(query)) {
+                matchFound = true;
+            }
+        }
+
+        // Показываем или прячем карточку
+        if (matchFound) {
+            card.style.display = "block";
+            matchCount++;
+        } else {
+            card.style.display = "none";
+        }
+    });
+
+    // Обработка результатов поиска
+    if (matchCount === 0) {
+        const searchType = isIdSearch ? "ID" : "ФИО";
+        searchMessage.textContent = `Пациент с ${searchType} "${rawInput}" не найден.`;
+        searchMessage.style.display = "block";
+    } else {
+        searchMessage.style.display = "none";
+    }
+}
+
+// Поиск по нажатию клавиши Enter
+document.getElementById('searchInput').addEventListener('keypress', function(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault(); // Отменяем стандартное поведение формы
+        searchPatient();        // Запускаем нашу функцию
+    }
+});
+
+// Отправка веб-формы в Python
+async function runAssessment() {
+    const outputBox = document.getElementById('resultOutput');
+    outputBox.innerText = "Загрузка...";
+
+    // Собираем данные из полей ввода
+    const payload = {
+        name: document.getElementById('ptName').value,
+        pain_type: document.getElementById('ptPain').value,
+        ecg_changes: document.getElementById('ptEcg').value,
+        troponin: parseFloat(document.getElementById('ptTrop').value),
+        hr: parseInt(document.getElementById('ptHr').value),
+        bp: document.getElementById('ptBp').value,
+        free_text: ""
+    };
+
+    // Отправляем JSON на наш Python сервер (FastAPI)
+    const response = await fetch('/api/assess', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    // Печатаем ответ
+    const result = await response.json();
+    outputBox.innerText = JSON.stringify(result, null, 2);
+}
+
+// Отправка команды из Консоли
+async function runConsole() {
+    const outputBox = document.getElementById('consoleOutput');
+    outputBox.innerText = "Выполнение команды...";
+
+    const commandText = document.getElementById('consoleInput').value;
+
+    const response = await fetch('/api/console', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: commandText })
+    });
+
+    const result = await response.json();
+    outputBox.innerText = JSON.stringify(result, null, 2);
+}
+
+// Логика изменения размера панели
+document.addEventListener('DOMContentLoaded', async function () {
+    const resizer = document.getElementById('dragMe');
+    const leftSide = document.getElementById('sidebar');
+
+    if (!resizer || !leftSide) return;
+
+    const mouseDownHandler = function (e) {
+        // Добавляем класс всему ТЕЛУ страницы
+        // Это мгновенно запрещает выделение любого текста в любой части экрана
+        document.body.classList.add('dragging-active');
+
+        document.addEventListener('mousemove', mouseMoveHandler);
+        document.addEventListener('mouseup', mouseUpHandler);
+        
+        resizer.classList.add('active');
+    };
+
+    const mouseMoveHandler = function (e) {
+        // Вычисляем ширину по положению мыши
+        let newWidth = e.clientX;
+        
+        // Ограничители (чтобы не схлопнуть в 0 и не растянуть на весь экран)
+        if (newWidth < 200) newWidth = 200;
+        if (newWidth > window.innerWidth * 0.6) newWidth = window.innerWidth * 0.6;
+        
+        leftSide.style.width = `${newWidth}px`;
+    };
+
+    const mouseUpHandler = function () {
+        // Убираем класс с тела страницы - выделение снова работает
+        document.body.classList.remove('dragging-active');
+        
+        resizer.classList.remove('active');
+        document.removeEventListener('mousemove', mouseMoveHandler);
+        document.removeEventListener('mouseup', mouseUpHandler);
+    };
+
+    resizer.addEventListener('mousedown', mouseDownHandler);
+    
+    // Подгрузка пациентов
+    await loadPatientsFromDB();
+});
+
+
+// Логика выбора пациента
 async function selectPatient(patientId) {
+    // Показываем загрузку на вкладке
     document.getElementById('visitsPanel').innerHTML = "Загрузка данных пациента...";
     
     try {
+        // Делаем запрос к серверу за полными данными
         const response = await fetch(`/api/patients/${patientId}`);
         const patient = await response.json();
 
         if (patient.error) throw new Error(patient.error);
 
+        // охраняем выбранного пациента в глобальное состояние
         currentPatient = patient;
 
+        // Обновляем интерфейс
         updateSelectionUI(patientId);
 
+        // Отрисовываем детали (визиты и т.д.)
         renderPatientDashboard();
 
     } catch (error) {
@@ -215,7 +240,7 @@ async function selectPatient(patientId) {
     }
 }
 
-// Вынесли визуальное обновление в отдельную функцию для чистоты
+// Визуальное обновление
 function updateSelectionUI(patientId) {
     document.querySelectorAll('.patient-card').forEach(card => card.classList.remove('selected'));
     const activeCard = document.getElementById(`card-${patientId}`);
@@ -226,6 +251,7 @@ function updateSelectionUI(patientId) {
     document.getElementById('unselectBtn').style.display = 'block';
 }
 
+// Отрисовываем детали
 function renderPatientDashboard() {
     const visitsPanel = document.getElementById('visitsPanel');
     const statsPanel = document.getElementById('statsPanel');
@@ -257,6 +283,7 @@ function renderPatientDashboard() {
     statsPanel.innerHTML = "<h4>Статистика и анализы</h4><p>Данные подгружены из БД.</p>";
 }
 
+ // Вывести приложение из режима работы с конкретным человеком и вернуть его в нейтральное состояние
 function unselectPatient() {
     // Очищаем состояние
     currentPatient = null;
@@ -276,15 +303,16 @@ function renderPatientDashboard() {
     const visitsPanel = document.getElementById('visitsPanel');
     const statsPanel = document.getElementById('statsPanel');
 
-    // 1. Если пациент не выбран - показываем пустые экраны (заглушки)
+    // Если пациент не выбран - показываем пустые экраны (заглушки)
     if (!currentPatient) {
-        visitsPanel.innerHTML = '<div class="empty-state">Выберите пациента слева для просмотра визитов</div>';
-        statsPanel.innerHTML = '<div class="empty-state">Выберите пациента слева для просмотра анализов</div>';
+        visitsPanel.innerHTML = '<div class="empty-state">Выберите пациента для просмотра визитов</div>';
+        statsPanel.innerHTML = '<div class="empty-state">Выберите пациента для просмотра анализов</div>';
         return;
     }
 
+    // 1. Левая колонка (Визиты)
 
-    // Формируем заголовок колонки визитов с маленькой кнопкой "+ Добавить"
+    // Формируем заголовок колонки визитов с кнопкой "Добавить"
     let visitsHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; margin-bottom: 15px;">
             <h4 style="margin: 0; color: #334155;">История визитов</h4>
@@ -298,7 +326,7 @@ function renderPatientDashboard() {
     } 
     // Если визиты есть, рисуем список
     else {
-        // Сортируем визиты по дате (чтобы новые были сверху)
+        // Сортируем визиты по дате
         const sortedVisits = [...currentPatient.visits].reverse();
         
         sortedVisits.forEach(v => {
@@ -314,8 +342,10 @@ function renderPatientDashboard() {
     // Вставляем сгенерированный HTML в левую панель вкладки "Пациент"
     visitsPanel.innerHTML = visitsHTML;
 
+
+    // 2. Правая колонка 
     
-    // Пока что просто рисуем заглушку, так как анализы мы еще не делали
+    // Пока что просто рисуем заглушку
     statsPanel.innerHTML = `
         <div style="border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; margin-bottom: 15px;">
             <h4 style="margin: 0; color: #334155;">Анализы и статистика</h4>
@@ -331,14 +361,19 @@ function renderPatientDashboard() {
     `;
 }
 
-// логика модального окна визитов
+
+// Логика модального окна
 function openVisitModal() {
     if (!currentPatient) return;
     
     document.getElementById('modalPatientId').value = currentPatient.id;
     document.getElementById('modalPatientName').value = currentPatient.full_name;
     
+    // Подставляем текущую дату и время 
+    // slice(0,16) обрезает строку до формата YYYY-MM-DDTHH:MM (то, что нужно для datetime-local)
     const now = new Date();
+
+    // Корректируем время под локальный часовой пояс пользователя
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     document.getElementById('modalVisitDate').value = now.toISOString().slice(0,16);
     
@@ -357,8 +392,11 @@ async function submitNewVisit() {
         return;
     }
 
+    // Проверка частого создания записей (в пределах одного часа на человека)
+    // Переводим введенное время в миллисекунды
     const newTimeMs = new Date(dateVal).getTime();
     
+    // Ищем, есть ли визит с разницей меньше 60 минут (1 час = 3 600 000 мс)
     const isTooClose = currentPatient.visits.some(v => {
         const existingTimeMs = new Date(v.iso_date).getTime();
         const diffHours = Math.abs(newTimeMs - existingTimeMs) / (1000 * 60 * 60);
@@ -366,9 +404,10 @@ async function submitNewVisit() {
     });
 
     if (isTooClose) {
+        // confirm выводит стандартное окно с кнопками "ОК" и "Отмена"
         const userAgreed = confirm("⚠️ Внимание!\nУ пациента уже есть визит с разницей менее 1 часа от указанного времени.\nВы точно хотите добавить еще один?");
         if (!userAgreed) {
-            return; // Пользователь нажал "Отмена" - прерываем сохранение
+            return;
         }
     }
 
@@ -386,7 +425,7 @@ async function submitNewVisit() {
         if(res.error) throw new Error(res.error);
         
         closeVisitModal();
-        selectPatient(currentPatient.id); 
+        selectPatient(currentPatient.id); // получаем обновленные данные пациента
         
     } catch (err) {
         alert("Ошибка: " + err.message);
@@ -395,7 +434,7 @@ async function submitNewVisit() {
 
 // Удаление визита
 async function deleteVisit(visitId) {
-    // Спрашиваем подтверждение перед удалением (защита от случайного клика)
+    // Спрашиваем подтверждение перед удалением
     if (!confirm("Вы уверены, что хотите удалить этот визит? Это действие необратимо.")) {
         return;
     }
@@ -433,20 +472,21 @@ function closeAddPatientModal() {
 }
 
 async function submitNewPatient() {
-    // 1. Считываем данные
+    // Считываем данные
     const lastName = document.getElementById('newLastName').value.trim();
     const firstName = document.getElementById('newFirstName').value.trim();
     const patronymic = document.getElementById('newPatronymic').value.trim();
     const birthDate = document.getElementById('newBirthDate').value;
     const gender = document.getElementById('newGender').value;
 
+    // Проверка обязательный полей
     if (!lastName || !firstName || !birthDate || !gender) {
         alert("Пожалуйста, заполните все обязательные поля (отмечены звездочкой *)!");
-        return;
+        return; // Прерываем выполнение! Данные не уйдут на сервер.
     }
 
     try {
-        // 3. Отправляем запрос
+        // Отправляем запрос
         const response = await fetch('/api/patients', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -466,6 +506,7 @@ async function submitNewPatient() {
         alert(`Пациент успешно зарегистрирован!\nПрисвоен ID: ${result.display_id}`);
         closeAddPatientModal();
         
+        // Перезагружаем список пациентов слева
         await loadPatientsFromDB();
         
     } catch (err) {
@@ -474,7 +515,7 @@ async function submitNewPatient() {
 }
 
 
-// НСИ
+// Логика панели настроек
 let currentNsiMode = 'edit';
 
 // Открываем таблицу (Справочник)
@@ -485,9 +526,11 @@ async function openNsiModal(mode) {
     const hint = document.getElementById('nsiModalHint');
     const tbody = document.getElementById('nsiTableBody');
     
+    // Показываем окно и крутилку загрузки
     modal.style.display = 'flex';
     tbody.innerHTML = "<tr><td colspan='4' style='padding:20px; text-align:center; color:#94a3b8;'>Загрузка справочника из базы данных...</td></tr>";
     
+    // Настраиваем заголовки
     if (mode === 'edit') {
         title.innerText = "Редактирование пациента";
         hint.innerText = "Выберите пациента для изменения его данных.";
@@ -497,9 +540,11 @@ async function openNsiModal(mode) {
     }
 
     try {
+        // Запрос пациентов
         const response = await fetch('/api/patients');
         const patientsList = await response.json();
 
+        // Очищаем таблицу и рисуем результат
         tbody.innerHTML = "";
         
         if (patientsList.length === 0) {
@@ -508,9 +553,10 @@ async function openNsiModal(mode) {
         }
 
         patientsList.forEach(p => {
+            // Формируем кнопку действия
             let actionBtn = "";
             if (mode === 'edit') {
-
+                // Важно: мы передаем ID в openEditForm, а не весь объект!
                 actionBtn = `<button class="small-btn" style="color:#2563eb; border-color:#2563eb;" onclick="openEditForm(${p.id})">Редактировать</button>`;
             } else {
                 actionBtn = `<button class="small-btn" style="color:#ef4444; border-color:#ef4444; background-color:#fef2f2;" onclick="confirmDelete(${p.id}, '${p.full_name}')">Удалить</button>`;
@@ -532,11 +578,11 @@ async function openNsiModal(mode) {
     }
 }
 
-// Удаление
+// Логика удаления
 async function confirmDelete(patientId, patientName) {
     // Двойное жесткое подтверждение от пользователя
     const isConfirmed = confirm(
-        `БЕЗВОЗВРАТНОЕ УДАЛЕНИЕ!\n\nВы действительно хотите удалить пациента "${patientName}" и всю его историю визитов?`
+        `Безвозвратное удаление!\n\nВы действительно хотите удалить пациента "${patientName}" и всю его историю визитов?`
     );
     
     if (!isConfirmed) return;
@@ -563,35 +609,41 @@ async function confirmDelete(patientId, patientName) {
     }
 }
 
-// Редактирование
+// Логика редактирования пациента
 async function openEditForm(patientId) {
     try {
+        // Запрашиваем полные данные пациента по ID
         const response = await fetch(`/api/patients/${patientId}`);
         const p = await response.json();
 
         if (p.error) throw new Error(p.error);
 
+        // акрываем таблицу Справочника
         document.getElementById('nsiModal').style.display = 'none';
         
+        // Разбиваем ФИО обратно на части
         const nameParts = p.full_name.split(' ');
         const lastName = nameParts[0] || '';
         const firstName = nameParts[1] || '';
         const patronymic = nameParts.slice(2).join(' ') || '';
 
+        // Переворачиваем дату из ДД.ММ.ГГГГ (как в базе) в ГГГГ-ММ-ДД (для HTML-календаря)
         const dateParts = p.birth_date.split('.');
         const isoDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
 
+        // Заполняем поля старой формы "Добавить пациента"
         document.getElementById('newLastName').value = lastName;
         document.getElementById('newFirstName').value = firstName;
         document.getElementById('newPatronymic').value = patronymic;
         document.getElementById('newBirthDate').value = isoDate;
-        
         document.getElementById('newGender').value = p.gender || '';
         
+        // Меняем надпись на кнопке и сохраняем ID пациента в скрытый атрибут
         const btn = document.querySelector('#patientModal .action-btn');
         btn.innerText = "Сохранить изменения";
         btn.setAttribute('data-edit-id', p.id); 
         
+        // Открываем окно
         document.getElementById('patientModal').style.display = 'flex';
 
     } catch (err) {
