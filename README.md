@@ -113,6 +113,12 @@ ollama pull qwen2.5:7b-instruct
 ollama pull qwen2.5:3b-instruct
 ```
 ## Настройка Базы Данных (PostgreSQL)
+Необходимо:
+1. Установить PostgreSQL.
+2. При установке задать пароль (например, admin).
+3. Открыть программу pgAdmin 4 и создать там пустую базу данных с названием acs_db.
+
+Перед запуском:
 Создайте в корне проекта файл .env и укажите данные для подключения (замените ВАШ_ПАРОЛЬ):
 DATABASE_URL=postgresql://postgres:ВАШ_ПАРОЛЬ@localhost:5432/acs_db
 
