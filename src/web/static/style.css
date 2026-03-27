@@ -1,0 +1,376 @@
+/* Базовые настройки для всего сайта */
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex; /* Делит экран на колонки */
+    height: 100vh; /* Высота 100% экрана */
+    background-color: #f8f9fa;
+    color: #333;
+}
+
+/* --- Левая панель (Сайдбар) --- */
+.sidebar {
+    width: 20%;
+    min-width: 250px;
+    max-width: 40%;
+    background-color: #f0f4f8;
+    padding: 20px;
+    display: flex;
+    flex-direction: column; /* Важно: элементы идут сверху вниз */
+    height: 100vh; /* Сайдбар на всю высоту экрана */
+    box-sizing: border-box; /* Чтобы padding не ломал ширину */
+}
+
+/* Центрируем заголовок */
+.sidebar h2 {
+    text-align: center;
+    color: #334155;
+    margin-top: 0;
+    margin-bottom: 20px;
+    font-size: 1.4em;
+    letter-spacing: 0.5px;
+}
+
+/* Строка поиска */
+.search-box {
+    margin-bottom: 15px;
+}
+
+.search-box input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.9em;
+    box-sizing: border-box;
+    background-color: #ffffff;
+}
+
+.search-box input:focus {
+    outline: none;
+    border-color: #94a3b8;
+}
+
+/* --- КОНТЕЙНЕР ДЛЯ СПИСКА ПАЦИЕНТОВ (С ПРОКРУТКОЙ) --- */
+.patient-list {
+    flex-grow: 1; /* Занимает всё оставшееся место по высоте */
+    overflow-y: auto; /* Включает вертикальную прокрутку, если карточек много */
+    padding-right: 5px; /* Немного места для ползунка прокрутки */
+}
+
+/* Прячем стандартный скроллбар браузера для красоты (работает в Chrome/Edge) */
+.patient-list::-webkit-scrollbar {
+    width: 6px;
+}
+.patient-list::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1;
+    border-radius: 10px;
+}
+
+/* --- КАРТОЧКА ПАЦИЕНТА --- */
+.patient-card {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    /* Левая цветная полоска. По умолчанию серая. Позже будем менять её цвет скриптом */
+    border-left: 4px solid #94a3b8; 
+}
+
+/* Эффект при наведении мыши */
+.patient-card:hover {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    border-color: #cbd5e1;
+    transform: translateY(-1px); /* Карточка чуть-чуть "приподнимается" */
+}
+
+/* Внутренности карточки */
+.patient-card-header {
+    display: flex;
+    justify-content: space-between; /* ID слева, год рождения справа */
+    font-size: 0.75em;
+    color: #64748b;
+    margin-bottom: 6px;
+    font-family: monospace;
+}
+
+.patient-card-name {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 0.95em;
+}
+
+/* --- Кнопка поиска --- */
+.search-btn {
+    background-color: #334155;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.search-btn:hover {
+    background-color: #475569; /* Чуть светлее при наведении */
+}
+
+.search-box {
+    display: flex; /* Выстраиваем элементы в ряд */
+    gap: 8px;      /* Расстояние между полем и кнопкой */
+    margin-bottom: 15px;
+}
+
+.search-box input {
+    flex-grow: 1; 
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+}
+
+.dummy-message {
+    font-size: 0.85em;
+    color: #dc2626; /* Красноватый цвет для предупреждения */
+}
+
+/* --- Правая часть --- */
+.main-wrapper {
+    flex-grow: 1; /* Автоматически заполняет все свободное пространство */
+    display: flex;
+    flex-direction: column;
+    min-width: 0; /* Защита от вылезания контента за пределы экрана */
+}
+
+/* Верхняя панель вкладок */
+.top-nav {
+    height: 10%;
+    min-height: 60px;
+    background-color: #cce1eb;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: flex-end; /* Кнопки прижаты к низу панели */
+    padding-left: 20px;
+}
+
+.tab-btn {
+    background: none;
+    border: none;
+    padding: 15px 20px;
+    font-size: 1em;
+    cursor: pointer;
+    color: #64748b;
+    border-bottom: 3px solid transparent; /* Прозрачная линия внизу */
+}
+
+.tab-btn.active {
+    color: #0f172a; /* Темный текст для активной вкладки */
+    border-bottom: 3px solid #2563eb; /* Синяя линия под активной вкладкой */
+    font-weight: bold;
+}
+
+/* Рабочая область */
+.content-area {
+    padding: 30px;
+    height: 90%;
+    overflow-y: auto;
+}
+
+/* Скрываем вкладки по умолчанию */
+.tab-content {
+    display: none; 
+}
+
+/* Показываем только активную */
+.tab-content.active {
+    display: block; 
+}
+
+.subtitle {
+    color: #64748b;
+    margin-bottom: 20px;
+}
+
+/* Формы и кнопки */
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* 2 одинаковые колонки */
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.form-grid input, .form-grid select {
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+}
+
+.action-btn {
+    background-color: #2563eb;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1em;
+}
+
+.action-btn:hover {
+    background-color: #1d4ed8;
+}
+
+/* Консоль разработчика */
+#consoleInput {
+    width: 100%;
+    height: 120px;
+    font-family: monospace;
+    padding: 10px;
+    margin-bottom: 15px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+}
+
+.console-output {
+    background-color: #1e293b;
+    color: #10b981;
+    padding: 15px;
+    border-radius: 4px;
+    margin-top: 20px;
+    min-height: 100px;
+    font-family: monospace;
+    white-space: pre-wrap; /* Сохраняет переносы строк в JSON */
+}
+
+/* Полоска разделителя */
+.resizer {
+    width: 5px;
+    background-color: #e2e8f0;
+    cursor: col-resize; /* Меняет курсор мыши на стрелочки <-> */
+    transition: background-color 0.2s;
+}
+
+/* При наведении мыши полоска подсвечивается синим */
+.resizer:hover, .resizer.active {
+    background-color: #2563eb;
+}
+
+/* --- ГЛОБАЛЬНЫЙ КОНТЕКСТ ПАЦИЕНТА (Плашка сверху) --- */
+.active-patient-banner {
+    background-color: #cce1eb;
+    color: #1e293b;
+    padding: 10px 20px;
+    font-size: 0.95em;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #cbd5e1;
+}
+
+#unselectBtn {
+    background: none;
+    border: none;
+    color: #475569;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+#unselectBtn:hover {
+    color: #ef4444; /* Краснеет при наведении */
+}
+
+/* --- ПОДСВЕТКА ВЫБРАННОГО ПАЦИЕНТА В СПИСКЕ --- */
+.patient-card.selected {
+    background-color: #e0f2fe;
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 2px #bae6fd;
+}
+
+/* --- ВЕРСТКА ВЛАДКИ "ПАЦИЕНТ" (Две колонки) --- */
+.patient-dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* Ровно пополам (50% на 50%) */
+    gap: 20px;
+    height: 100%;
+    min-height: 400px;
+}
+
+.dashboard-panel {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px;
+    overflow-y: auto; /* Скролл, если контента много */
+}
+
+.empty-state {
+    color: #94a3b8;
+    text-align: center;
+    margin-top: 50px;
+    font-style: italic;
+}
+
+/* --- МАЛЕНЬКАЯ КНОПКА --- */
+.small-btn {
+    background-color: #f1f5f9;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85em;
+    transition: all 0.2s;
+}
+
+.small-btn:hover {
+    background-color: #e2e8f0;
+}
+
+/* --- МОДАЛЬНОЕ ОКНО --- */
+.modal {
+    display: none; /* Скрыто по умолчанию */
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(15, 23, 42, 0.4); /* Полупрозрачный фон (затемнение) */
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background-color: #ffffff;
+    padding: 25px;
+    border-radius: 8px;
+    width: 350px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    position: relative;
+}
+
+.close-btn {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    color: #94a3b8;
+    font-size: 24px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.close-btn:hover {
+    color: #ef4444;
+}
+
+/* Служебный класс для отключения выделения текста во всём приложении (исп. при перетаскивании границы)*/
+.dragging-active {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    cursor: col-resize !important;
+}

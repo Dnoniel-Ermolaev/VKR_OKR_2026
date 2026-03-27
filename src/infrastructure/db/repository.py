@@ -1,16 +1,17 @@
+# src/infrastructure/db/repository.py
 from __future__ import annotations
-
 import csv
 from pathlib import Path
 from typing import Dict, List, Optional
+
+from sqlalchemy.orm import Session
+from src.infrastructure.db.models import Patient
+from src.infrastructure.db.models import PatientRecord
 
 try:
     import pandas as pd
 except Exception:
     pd = None
-
-from src.infrastructure.db.models import PatientRecord
-
 
 DEFAULT_COLUMNS = [
     "id",
@@ -76,3 +77,17 @@ class PatientRepository:
         with self.csv_path.open("w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=DEFAULT_COLUMNS)
             writer.writeheader()
+
+""" Классы для использовани ORM SQLAlchemy """
+
+class sql_database_repository:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get_all_patients(self):
+        """ Список пациентов из базы """
+        return self.session.query(Patient).all()
+
+    def get_patient_full_details(self, patient_id: int):
+        """ Данные о пациенте """
+        return self.session.query(Patient).filter(Patient.id == patient_id).first()

@@ -23,13 +23,14 @@
 - Локальный RAG по `data/guidelines/*.txt` (без vector DB).
 - Сохранение истории в `data/patients.csv`.
 - A/B режим сравнения двух моделей (`--mode ab`).
+- Первичный Web UI.
 
 ## Что пока не сделано
-
-- Web UI.
 - Векторный RAG (Chroma/FAISS + embeddings).
 - Реальный режим паузы/возобновления кейса (persisted wait-state).
-
+- Раздел Аналитики в UI
+- Сохранение в базу анализов, кардиограмм.
+- поиск и сбор ифнормации по пациенту (по кардиограммак, анализам)
 ## Архитектура (текущая рабочая)
 
 ```mermaid
@@ -111,6 +112,30 @@ python -m src.infrastructure.rag.rag_setup
 ollama pull qwen2.5:7b-instruct
 ollama pull qwen2.5:3b-instruct
 ```
+## Настройка Базы Данных (PostgreSQL)
+Необходимо:
+1. Установить PostgreSQL.
+2. При установке задать пароль (например, admin).
+3. Открыть программу pgAdmin 4 и создать там пустую базу данных с названием acs_db.
+
+Перед запуском:
+Создайте в корне проекта файл .env и укажите данные для подключения (замените ВАШ_ПАРОЛЬ):
+DATABASE_URL=postgresql://postgres:ВАШ_ПАРОЛЬ@localhost:5432/acs_db
+
+Выполните первичную миграцию (создание таблиц и тестовых пациентов):
+
+```bash
+  python -m src.infrastructure.db.init_db
+```
+## Запуск Web-интерфейса
+
+Запустите сервер FastAPI:
+
+```bash
+  python -m uvicorn src.web.api:app --reload
+```
+После запуска откройте в браузере: http://127.0.0.1:8000
+
 
 ## Прямой запуск из корня проекта (python)
 
