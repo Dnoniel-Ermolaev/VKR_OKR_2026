@@ -17,6 +17,8 @@ from src.core.prompts import (
     PARSE_HISTORY_USER_TEMPLATE,
     PRETRIAGE_ROUTER_SYSTEM_PROMPT,
     PRETRIAGE_ROUTER_USER_TEMPLATE,
+    REPORT_SYSTEM_PROMPT,
+    REPORT_USER_TEMPLATE,
 )
 from src.infrastructure.db.repository import PatientRepository
 from src.infrastructure.rag.retriever import GuidelinesRetriever
@@ -263,6 +265,39 @@ class LlmClient:
             adjustment, explanation = self._fallback(patient_data, rule_reasons, rag_context)
             return adjustment, explanation, False
 
+    def generate_clinical_report(
+        self,
+        *,
+        case_summary: str,
+        rag_context: str,
+        require_llm: bool = False,
+        model_name: str | None = None,
+    ) -> Tuple[str, bool]:
+        selected_model = model_name or self.model_name
+        if self._ollama is None:
+            if require_llm:
+                raise RuntimeError("LLM-генерация отчета обязательна, но Ollama недоступна.")
+            return self._fallback_report(case_summary, rag_context), False
+
+        prompt = REPORT_USER_TEMPLATE.format(case_summary=case_summary, rag_context=rag_context)
+        try:
+            response = self._ollama.chat(
+                model=selected_model,
+                messages=[
+                    {"role": "system", "content": REPORT_SYSTEM_PROMPT.strip()},
+                    {"role": "user", "content": prompt.strip()},
+                ],
+            )
+            data = self._extract_json_object(response["message"]["content"])
+            report = str(data.get("report", "")).strip()
+            if not report:
+                report = self._fallback_report(case_summary, rag_context)
+            return report, True
+        except Exception as exc:
+            if require_llm:
+                raise RuntimeError("LLM-генерация отчета не удалась.") from exc
+            return self._fallback_report(case_summary, rag_context), False
+
     def _parse_output(self, text: str) -> Tuple[float, str]:
         try:
             data = json.loads(text)
@@ -386,6 +421,19 @@ class LlmClient:
             "Результат носит предварительный характер и требует клинической верификации врачом."
         )
 
+    def _fallback_report(self, case_summary: str, rag_context: str) -> str:
+        rag_preview = rag_context.split("\n---\n")[0][:500] if rag_context else "нет"
+        return (
+            "Жалобы и анамнез:\n"
+            f"{case_summary}\n\n"
+            "Диагностические данные и контекст:\n"
+            f"{rag_preview}\n\n"
+            "Оценка риска:\n"
+            "Кейс требует клинической интерпретации с учетом динамики симптомов, ЭКГ и биомаркеров.\n\n"
+            "Предварительные рекомендации:\n"
+            "Продолжить наблюдение, коррелировать с локальным протоколом и решением лечащего врача."
+        )
+
     def _heuristic_parse_history(self, free_text: str) -> Tuple[Dict[str, object], List[str], float]:
         text = free_text.lower()
         pain_type = "none"
@@ -464,4 +512,7 @@ def build_repository(base_dir: Path) -> PatientRepository:
 
 
 def build_retriever(base_dir: Path) -> GuidelinesRetriever:
-    return GuidelinesRetriever(base_dir / "data" / "guidelines")
+    return GuidelinesRetriever(
+        base_dir / "data" / "guidelines",
+        persist_dir=base_dir / "data" / "chroma",
+    )

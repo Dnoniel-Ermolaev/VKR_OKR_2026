@@ -1,12 +1,27 @@
 from src.infrastructure.db.database import engine, Base, SessionLocal
-from src.infrastructure.db.models import Patient, Visit
-from datetime import date 
+from src.infrastructure.db.schema_upgrade import apply_schema_compat
+from src.infrastructure.db.models import (  # noqa: F401 - ensure models are registered with Base
+    CaseAssessment,
+    CaseDiagnosis,
+    CaseMedication,
+    CaseObservation,
+    CaseProcedure,
+    CaseStudy,
+    CaseTrackingItem,
+    ClinicalReport,
+    Patient,
+    TriageCase,
+    Visit,
+)
+from datetime import date
 
 """ Скрипт начальной инициализации. Создает все необходимые таблицы в базе """
 
 def init_database():
     print("Создание таблиц в базе ...")
     Base.metadata.create_all(bind=engine)
+    print("Проверка схемы (добавление колонок к старым таблицам при необходимости)...")
+    apply_schema_compat(engine)
     
     session = SessionLocal()
     

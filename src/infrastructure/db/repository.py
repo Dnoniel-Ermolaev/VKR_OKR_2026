@@ -1,12 +1,25 @@
 # src/infrastructure/db/repository.py
 from __future__ import annotations
 import csv
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
-from src.infrastructure.db.models import Patient
-from src.infrastructure.db.models import PatientRecord
+from src.infrastructure.db.models import (
+    CaseAssessment,
+    CaseDiagnosis,
+    CaseMedication,
+    CaseObservation,
+    CaseProcedure,
+    CaseStudy,
+    CaseTrackingItem,
+    ClinicalReport,
+    Patient,
+    PatientRecord,
+    TriageCase,
+    Visit,
+)
 
 try:
     import pandas as pd
@@ -91,3 +104,468 @@ class sql_database_repository:
     def get_patient_full_details(self, patient_id: int):
         """ Данные о пациенте """
         return self.session.query(Patient).filter(Patient.id == patient_id).first()
+
+    def get_visit(self, visit_id: int) -> Visit | None:
+        return self.session.query(Visit).filter(Visit.id == visit_id).first()
+
+    def create_case(
+        self,
+        *,
+        patient_id: int | None,
+        visit_id: int | None,
+        title: str,
+        llm_model: str,
+        initial_payload: Dict[str, Any],
+        latest_payload: Dict[str, Any],
+    ) -> TriageCase:
+        case = TriageCase(
+            patient_id=patient_id,
+            visit_id=visit_id,
+            title=title,
+            llm_model=llm_model,
+            initial_payload=initial_payload,
+            latest_payload=latest_payload,
+        )
+        self.session.add(case)
+        self.session.commit()
+        self.session.refresh(case)
+        return case
+
+    def get_case(self, case_id: str) -> TriageCase | None:
+        return self.session.query(TriageCase).filter(TriageCase.id == case_id).first()
+
+    def get_case_observations(self, case_id: str) -> List[CaseObservation]:
+        return (
+            self.session.query(CaseObservation)
+            .filter(CaseObservation.case_id == case_id)
+            .order_by(CaseObservation.recorded_at.asc(), CaseObservation.id.asc())
+            .all()
+        )
+
+    def get_case_assessments(self, case_id: str) -> List[CaseAssessment]:
+        return (
+            self.session.query(CaseAssessment)
+            .filter(CaseAssessment.case_id == case_id)
+            .order_by(CaseAssessment.created_at.asc(), CaseAssessment.id.asc())
+            .all()
+        )
+
+    def get_case_reports(self, case_id: str) -> List[ClinicalReport]:
+        return (
+            self.session.query(ClinicalReport)
+            .filter(ClinicalReport.case_id == case_id)
+            .order_by(ClinicalReport.created_at.asc(), ClinicalReport.id.asc())
+            .all()
+        )
+
+    def get_case_tracking_items(self, case_id: str) -> List[CaseTrackingItem]:
+        return (
+            self.session.query(CaseTrackingItem)
+            .filter(CaseTrackingItem.case_id == case_id)
+            .order_by(CaseTrackingItem.created_at.asc(), CaseTrackingItem.id.asc())
+            .all()
+        )
+
+    def list_patient_cases(self, patient_id: int) -> List[TriageCase]:
+        return (
+            self.session.query(TriageCase)
+            .filter(TriageCase.patient_id == patient_id)
+            .order_by(TriageCase.created_at.desc())
+            .all()
+        )
+
+    def add_case_observations(self, case_id: str, observations: List[Dict[str, Any]]) -> List[CaseObservation]:
+        created: List[CaseObservation] = []
+        for item in observations:
+            recorded_at = self._parse_dt(item.get("recorded_at")) or datetime.now(timezone.utc)
+            obs = CaseObservation(
+                case_id=case_id,
+                category=str(item.get("category", "vital")),
+                code=str(item.get("code", "")).strip(),
+                name=str(item.get("name", "")).strip(),
+                value_num=float(item["value_num"]) if item.get("value_num") is not None else None,
+                value_text=str(item["value_text"]) if item.get("value_text") is not None else None,
+                unit=str(item.get("unit", "")),
+                flag=str(item.get("flag", "unknown")),
+                source=str(item.get("source", "manual")),
+                note=str(item.get("note", "")),
+                recorded_at=recorded_at,
+            )
+            self.session.add(obs)
+            created.append(obs)
+        self.session.commit()
+        for obs in created:
+            self.session.refresh(obs)
+        return created
+
+    def update_case_observation(self, observation_id: int, **fields: Any) -> CaseObservation | None:
+        obs = self.session.query(CaseObservation).filter(CaseObservation.id == observation_id).first()
+        if obs is None:
+            return None
+        for key, value in fields.items():
+            if key == "recorded_at":
+                value = self._parse_dt(value) or obs.recorded_at
+            if hasattr(obs, key):
+                setattr(obs, key, value)
+        self.session.commit()
+        self.session.refresh(obs)
+        return obs
+
+    def delete_case_observation(self, observation_id: int) -> bool:
+        obs = self.session.query(CaseObservation).filter(CaseObservation.id == observation_id).first()
+        if obs is None:
+            return False
+        self.session.delete(obs)
+        self.session.commit()
+        return True
+
+    def save_case_assessment(
+        self,
+        *,
+        case_id: str,
+        run_kind: str,
+        payload_snapshot: Dict[str, Any],
+        result: Dict[str, Any],
+    ) -> CaseAssessment:
+        assessment = CaseAssessment(
+            case_id=case_id,
+            run_kind=run_kind,
+            payload_snapshot=payload_snapshot,
+            risk=float(result.get("risk", 0.0)),
+            risk_level=str(result.get("risk_level", "low")),
+            triage_category=str(result.get("triage_category", "")),
+            next_step=str(result.get("next_step", "")),
+            route_reason=str(result.get("route_reason", "")),
+            explanation=str(result.get("explanation", "")),
+            citations_json=list(result.get("citations", [])),
+            missing_fields_json=list(result.get("missing_fields", [])),
+            llm_used=bool(result.get("llm_used", False)),
+        )
+        self.session.add(assessment)
+        self.session.commit()
+        self.session.refresh(assessment)
+        return assessment
+
+    def update_case_state(
+        self,
+        *,
+        case_id: str,
+        latest_payload: Dict[str, Any],
+        result: Dict[str, Any],
+        status: str,
+        current_stage: str,
+    ) -> TriageCase:
+        case = self.get_case(case_id)
+        if case is None:
+            raise ValueError("Case not found")
+        case.latest_payload = latest_payload
+        case.latest_risk = float(result.get("risk", 0.0))
+        case.latest_risk_level = str(result.get("risk_level", "low"))
+        case.latest_triage_category = str(result.get("triage_category", ""))
+        case.latest_next_step = str(result.get("next_step", ""))
+        case.latest_explanation = str(result.get("explanation", ""))
+        case.latest_citations = list(result.get("citations", []))
+        case.missing_fields_json = list(result.get("missing_fields", []))
+        case.status = status
+        case.current_stage = current_stage
+        case.updated_at = datetime.now(timezone.utc)
+        if status == "completed":
+            case.closed_at = datetime.now(timezone.utc)
+        self.session.commit()
+        self.session.refresh(case)
+        return case
+
+    def save_case_report(
+        self,
+        *,
+        case_id: str,
+        report_type: str,
+        content: str,
+        citations: List[str],
+    ) -> ClinicalReport:
+        report = ClinicalReport(
+            case_id=case_id,
+            report_type=report_type,
+            content=content,
+            citations_json=citations,
+        )
+        self.session.add(report)
+        self.session.commit()
+        self.session.refresh(report)
+        return report
+
+    def replace_case_tracking_items(self, case_id: str, items: List[Dict[str, Any]]) -> List[CaseTrackingItem]:
+        existing = self.session.query(CaseTrackingItem).filter(CaseTrackingItem.case_id == case_id).all()
+        for row in existing:
+            self.session.delete(row)
+        created: List[CaseTrackingItem] = []
+        now = datetime.now(timezone.utc)
+        for item in items:
+            due_at = self._parse_dt(item.get("due_at"))
+            completed_at = self._parse_dt(item.get("completed_at"))
+            row = CaseTrackingItem(
+                case_id=case_id,
+                item_type=str(item.get("item_type", "task")),
+                name=str(item.get("name", "")).strip(),
+                status=str(item.get("status", "pending")),
+                priority=str(item.get("priority", "medium")),
+                due_at=due_at,
+                completed_at=completed_at,
+                result_summary=str(item.get("result_summary", "")),
+                metadata_json=dict(item.get("metadata_json", {})),
+                source_page=int(item["source_page"]) if item.get("source_page") is not None else None,
+                created_at=now,
+                updated_at=now,
+            )
+            self.session.add(row)
+            created.append(row)
+        self.session.commit()
+        for row in created:
+            self.session.refresh(row)
+        return created
+
+    # ---------- Case lifecycle ----------
+    def get_active_case(self, patient_id: int | None, visit_id: int | None) -> TriageCase | None:
+        query = self.session.query(TriageCase).filter(TriageCase.status.in_(["active", "awaiting_labs"]))
+        if patient_id is not None:
+            query = query.filter(TriageCase.patient_id == patient_id)
+        if visit_id is not None:
+            query = query.filter(TriageCase.visit_id == visit_id)
+        return query.order_by(TriageCase.created_at.desc()).first()
+
+    def close_case(self, case_id: str) -> TriageCase | None:
+        case = self.get_case(case_id)
+        if case is None:
+            return None
+        case.status = "completed"
+        case.current_stage = "closed"
+        case.closed_at = datetime.now(timezone.utc)
+        case.updated_at = datetime.now(timezone.utc)
+        self.session.commit()
+        self.session.refresh(case)
+        return case
+
+    def reopen_case(self, case_id: str) -> TriageCase | None:
+        case = self.get_case(case_id)
+        if case is None:
+            return None
+        case.status = "active"
+        case.current_stage = "resumed"
+        case.closed_at = None
+        case.updated_at = datetime.now(timezone.utc)
+        self.session.commit()
+        self.session.refresh(case)
+        return case
+
+    # ---------- Studies ----------
+    def get_case_studies(self, case_id: str) -> List[CaseStudy]:
+        return (
+            self.session.query(CaseStudy)
+            .filter(CaseStudy.case_id == case_id)
+            .order_by(CaseStudy.started_at.asc().nullslast(), CaseStudy.id.asc())
+            .all()
+        )
+
+    def add_case_study(self, case_id: str, **fields: Any) -> CaseStudy:
+        started_at = self._parse_dt(fields.get("started_at"))
+        completed_at = self._parse_dt(fields.get("completed_at"))
+        study = CaseStudy(
+            case_id=case_id,
+            code=str(fields.get("code", "")).strip(),
+            name=str(fields.get("name", "")).strip(),
+            status=str(fields.get("status", "ordered")),
+            started_at=started_at,
+            completed_at=completed_at,
+            result_text=str(fields.get("result_text", "")),
+            result_json=dict(fields.get("result_json", {}) or {}),
+            ordered_by=str(fields.get("ordered_by", "")),
+            priority=str(fields.get("priority", "medium")),
+            note=str(fields.get("note", "")),
+        )
+        self.session.add(study)
+        self.session.commit()
+        self.session.refresh(study)
+        return study
+
+    def update_case_study(self, study_id: int, **fields: Any) -> CaseStudy | None:
+        study = self.session.query(CaseStudy).filter(CaseStudy.id == study_id).first()
+        if study is None:
+            return None
+        for key, value in fields.items():
+            if key in {"started_at", "completed_at"}:
+                value = self._parse_dt(value)
+            if key == "result_json" and value is not None:
+                value = dict(value)
+            if hasattr(study, key):
+                setattr(study, key, value)
+        study.updated_at = datetime.now(timezone.utc)
+        self.session.commit()
+        self.session.refresh(study)
+        return study
+
+    def delete_case_study(self, study_id: int) -> bool:
+        study = self.session.query(CaseStudy).filter(CaseStudy.id == study_id).first()
+        if study is None:
+            return False
+        self.session.delete(study)
+        self.session.commit()
+        return True
+
+    # ---------- Procedures ----------
+    def get_case_procedures(self, case_id: str) -> List[CaseProcedure]:
+        return (
+            self.session.query(CaseProcedure)
+            .filter(CaseProcedure.case_id == case_id)
+            .order_by(CaseProcedure.started_at.asc().nullslast(), CaseProcedure.id.asc())
+            .all()
+        )
+
+    def add_case_procedure(self, case_id: str, **fields: Any) -> CaseProcedure:
+        procedure = CaseProcedure(
+            case_id=case_id,
+            code=str(fields.get("code", "")).strip(),
+            name=str(fields.get("name", "")).strip(),
+            status=str(fields.get("status", "ordered")),
+            started_at=self._parse_dt(fields.get("started_at")),
+            completed_at=self._parse_dt(fields.get("completed_at")),
+            operator=str(fields.get("operator", "")),
+            details_json=dict(fields.get("details_json", {}) or {}),
+            priority=str(fields.get("priority", "medium")),
+            note=str(fields.get("note", "")),
+        )
+        self.session.add(procedure)
+        self.session.commit()
+        self.session.refresh(procedure)
+        return procedure
+
+    def update_case_procedure(self, procedure_id: int, **fields: Any) -> CaseProcedure | None:
+        procedure = self.session.query(CaseProcedure).filter(CaseProcedure.id == procedure_id).first()
+        if procedure is None:
+            return None
+        for key, value in fields.items():
+            if key in {"started_at", "completed_at"}:
+                value = self._parse_dt(value)
+            if key == "details_json" and value is not None:
+                value = dict(value)
+            if hasattr(procedure, key):
+                setattr(procedure, key, value)
+        procedure.updated_at = datetime.now(timezone.utc)
+        self.session.commit()
+        self.session.refresh(procedure)
+        return procedure
+
+    def delete_case_procedure(self, procedure_id: int) -> bool:
+        procedure = self.session.query(CaseProcedure).filter(CaseProcedure.id == procedure_id).first()
+        if procedure is None:
+            return False
+        self.session.delete(procedure)
+        self.session.commit()
+        return True
+
+    # ---------- Medications ----------
+    def get_case_medications(self, case_id: str) -> List[CaseMedication]:
+        return (
+            self.session.query(CaseMedication)
+            .filter(CaseMedication.case_id == case_id)
+            .order_by(CaseMedication.started_at.asc().nullslast(), CaseMedication.id.asc())
+            .all()
+        )
+
+    def add_case_medication(self, case_id: str, **fields: Any) -> CaseMedication:
+        med = CaseMedication(
+            case_id=case_id,
+            code=str(fields.get("code", "")).strip(),
+            name=str(fields.get("name", "")).strip(),
+            med_class=str(fields.get("med_class", "")).strip(),
+            dose=str(fields.get("dose", "")),
+            unit=str(fields.get("unit", "")),
+            route=str(fields.get("route", "po")),
+            frequency=str(fields.get("frequency", "")),
+            started_at=self._parse_dt(fields.get("started_at")),
+            stopped_at=self._parse_dt(fields.get("stopped_at")),
+            status=str(fields.get("status", "active")),
+            prescribed_by=str(fields.get("prescribed_by", "")),
+            note=str(fields.get("note", "")),
+        )
+        self.session.add(med)
+        self.session.commit()
+        self.session.refresh(med)
+        return med
+
+    def update_case_medication(self, medication_id: int, **fields: Any) -> CaseMedication | None:
+        med = self.session.query(CaseMedication).filter(CaseMedication.id == medication_id).first()
+        if med is None:
+            return None
+        for key, value in fields.items():
+            if key in {"started_at", "stopped_at"}:
+                value = self._parse_dt(value)
+            if hasattr(med, key):
+                setattr(med, key, value)
+        med.updated_at = datetime.now(timezone.utc)
+        self.session.commit()
+        self.session.refresh(med)
+        return med
+
+    def delete_case_medication(self, medication_id: int) -> bool:
+        med = self.session.query(CaseMedication).filter(CaseMedication.id == medication_id).first()
+        if med is None:
+            return False
+        self.session.delete(med)
+        self.session.commit()
+        return True
+
+    # ---------- Diagnoses ----------
+    def get_case_diagnoses(self, case_id: str) -> List[CaseDiagnosis]:
+        return (
+            self.session.query(CaseDiagnosis)
+            .filter(CaseDiagnosis.case_id == case_id)
+            .order_by(CaseDiagnosis.created_at.asc(), CaseDiagnosis.id.asc())
+            .all()
+        )
+
+    def add_case_diagnosis(self, case_id: str, **fields: Any) -> CaseDiagnosis:
+        diagnosis = CaseDiagnosis(
+            case_id=case_id,
+            icd10=str(fields.get("icd10", "")).strip().upper(),
+            name=str(fields.get("name", "")).strip(),
+            diagnosis_type=str(fields.get("diagnosis_type", "primary")),
+            established_at=self._parse_dt(fields.get("established_at")),
+            note=str(fields.get("note", "")),
+        )
+        self.session.add(diagnosis)
+        self.session.commit()
+        self.session.refresh(diagnosis)
+        return diagnosis
+
+    def update_case_diagnosis(self, diagnosis_id: int, **fields: Any) -> CaseDiagnosis | None:
+        diagnosis = self.session.query(CaseDiagnosis).filter(CaseDiagnosis.id == diagnosis_id).first()
+        if diagnosis is None:
+            return None
+        for key, value in fields.items():
+            if key == "established_at":
+                value = self._parse_dt(value)
+            if key == "icd10" and isinstance(value, str):
+                value = value.strip().upper()
+            if hasattr(diagnosis, key):
+                setattr(diagnosis, key, value)
+        self.session.commit()
+        self.session.refresh(diagnosis)
+        return diagnosis
+
+    def delete_case_diagnosis(self, diagnosis_id: int) -> bool:
+        diagnosis = self.session.query(CaseDiagnosis).filter(CaseDiagnosis.id == diagnosis_id).first()
+        if diagnosis is None:
+            return False
+        self.session.delete(diagnosis)
+        self.session.commit()
+        return True
+
+    def _parse_dt(self, value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str) and value.strip():
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return None
+        return None

@@ -1,0 +1,63 @@
+[
+  {
+    "id": "structured_high_risk_assess",
+    "surface": "POST /api/assess",
+    "purpose": "Быстрая демонстрация высокого риска на вкладке 'Оценка ОКС'.",
+    "input": {
+      "name": "Пациент КВА",
+      "pain_type": "typical",
+      "ecg_changes": "ST-elevation V2-V5, anterior STEMI",
+      "troponin": 0.17,
+      "hr": 78,
+      "bp": "135/92",
+      "free_text": ""
+    },
+    "expected": {
+      "risk_level": "high",
+      "triage_category": "high_risk_fast_track",
+      "next_step": "recommend_treatment",
+      "missing_fields": []
+    },
+    "reference_output": "../../tmp_runs/run1_structured.json"
+  },
+  {
+    "id": "free_text_demo",
+    "surface": "CLI / console",
+    "purpose": "Демонстрация извлечения структуры из подробного свободного текста.",
+    "input": {
+      "free_text": "Мужчина 67 лет, жгучая боль за грудиной, ST-elevation V2-V5, тропонин 22.712, ЧСС 78, АД 161/89, SpO2 94, креатинин 145"
+    },
+    "expected": {
+      "risk_level": "high",
+      "triage_category": "high_risk_fast_track",
+      "next_step": "recommend_treatment",
+      "parse_confidence": 0.8,
+      "missing_fields": [
+        "name",
+        "pain_type"
+      ]
+    },
+    "reference_output": "../../tmp_runs/run2_freetext.json"
+  },
+  {
+    "id": "data_quality_demo",
+    "surface": "CLI / console",
+    "purpose": "Показать реакцию системы на слишком бедный и опасно неполный ввод.",
+    "input": {
+      "free_text": "Боль в груди, стало плохо"
+    },
+    "expected": {
+      "risk_level": "low",
+      "triage_category": "data_quality_issue",
+      "next_step": "data_quality_issue",
+      "parse_confidence": 0.35,
+      "missing_fields": [
+        "bp",
+        "ecg_changes",
+        "hr",
+        "troponin"
+      ]
+    },
+    "reference_output": "../../tmp_runs/run3_sparse.json"
+  }
+]

@@ -34,6 +34,7 @@ class AgentState(TypedDict, total=False):
     llm_used: bool
     rule_reasons: List[str]
     rag_context: str
+    citations: List[str]
     db_results: List[Dict[str, Any]]
     risk: float
     risk_level: RiskLevel

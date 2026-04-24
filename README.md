@@ -1,103 +1,141 @@
-# LangGraph ACS (Console Prototype)
+# LangGraph ACS (Web + Case Prototype)
 
-Прототип локальной системы первичной оценки риска ОКС для учебных/исследовательских задач.
-Проект запускается из консоли и сохраняет результаты в CSV/JSON.
+Локальный прототип системы triage и сопровождения пациента с ОКС для учебных и исследовательских задач. Проект поддерживает быстрый `triage`-запуск, web-интерфейс для case-based работы, локальный RAG по клиническим рекомендациям, структурированный ввод данных пациента и генерацию клинического отчета.
 
 ## Что сделано сейчас
 
-- Консольный запуск: `python -m src.cli.main`.
-- Граф на `LangGraph` с многошаговым роутингом:
-  - `llm_parse_history` (если `--free-text`)
-  - `parse_input`
-  - `router_pretriage` + `clarify_data` (цикл уточнений)
-  - `rule_check`
-  - `router_diagnostic`
-  - ветки: `high_risk_fast_track` / `diagnostic_uncertain` / `low_risk_observation` / `data_quality_issue`
-  - `rag_retrieval` + `llm_assess` (для неочевидных кейсов)
-  - `router_management` + `monitor_plan` / `recommend_treatment`
-  - `output_save`
-- Три LLM-router узла с полями: `next_step`, `confidence`, `reason`.
-- Confidence-gates и fallback-маршрутизация.
-- Free-text режим с LLM/эвристическим парсингом анамнеза в структуру.
-- Расширенные поля пациента: `age`, `gender`, `spo2`, `creatinine`, `glucose`, `killip_class`, `echo_dkg_results` и др.
-- Локальный RAG по `data/guidelines/*.txt` (без vector DB).
-- Сохранение истории в `data/patients.csv`.
-- A/B режим сравнения двух моделей (`--mode ab`).
-- Первичный Web UI.
+- `LangGraph`-граф для оценки риска ОКС с многошаговым роутингом.
+- Поддержка двух режимов входа:
+  - `structured`-поля пациента;
+  - `free-text` с LLM/эвристическим парсингом.
+- Три LLM-router узла с `confidence-gates` и fallback-маршрутизацией.
+- Локальный RAG на `Chroma` + `sentence-transformers` embeddings + cross-encoder reranking.
+- Case lifecycle в БД:
+  - `start_case`
+  - `resume_case`
+  - `reassess`
+  - `close`
+  - `reopen`
+- Структурированные клинические сущности:
+  - витальные показатели
+  - лабораторные анализы
+  - исследования
+  - процедуры
+  - назначения
+  - диагнозы
+- Protocol-driven контроль пациента по сценариям `STEMI / NSTEMI / UA`.
+- Отдельный `report_graph` для генерации эпикриза/клинического отчета.
+- Web UI с вкладками пациента, активного кейса, динамики наблюдений и Excel-импорта.
+- Excel-импорт и генерация шаблонов для `Vitals / Labs / Studies / Procedures / Medications / Diagnoses`.
+- Набор unit/smoke тестов для каталогов, протоколов, lifecycle, Excel и API.
+- Модуль evaluation для расчета `sensitivity`, `specificity`, `AUC`.
 
-## Что пока не сделано
-- Векторный RAG (Chroma/FAISS + embeddings).
-- Реальный режим паузы/возобновления кейса (persisted wait-state).
-- Раздел Аналитики в UI
-- Сохранение в базу анализов, кардиограмм.
-- поиск и сбор ифнормации по пациенту (по кардиограммак, анализам)
-## Архитектура (текущая рабочая)
+## Архитектура продукта
+
+```mermaid
+flowchart TD
+    WebUI["Web UI + FastAPI"]
+    CaseApi["Case / Catalog / Excel API"]
+    ExcelImport["ExcelImportService"]
+    Repo["SQL Repository + PostgreSQL"]
+    CaseControl["Protocol-driven control"]
+    TriageGraph["Triage LangGraph"]
+    ReportGraph["Clinical report graph"]
+    RAG["Local RAG (Chroma)"]
+
+    WebUI --> CaseApi
+    WebUI --> ExcelImport
+    ExcelImport --> CaseApi
+    CaseApi --> Repo
+    CaseApi --> TriageGraph
+    CaseApi --> CaseControl
+    TriageGraph --> RAG
+    ReportGraph --> RAG
+    TriageGraph --> Repo
+    ReportGraph --> Repo
+    Repo --> CaseControl
+```
+
+### Что происходит в пользовательском сценарии
+
+1. Пользователь открывает web UI и выбирает пациента/визит.
+2. Система создает или переиспользует активный кейс.
+3. Данные поступают через формы, CRUD-операции или Excel-импорт.
+4. `workflow_runner` собирает `patient_data`, запускает triage-граф и сохраняет оценку.
+5. `patient_control` выбирает протокол ОКС и считает прогресс, overdue-пункты и alerts.
+6. При необходимости запускается отдельный `report_graph` для эпикриза.
+
+## Архитектура triage-графа
 
 ```mermaid
 graph TD
-    A[CLI input: structured или free-text] --> B{free_text?}
-    B -->|yes| C[llm_parse_history]
-    B -->|no| D[parse_input]
-    C --> D
-    D --> E[router_pretriage]
-    E -->|needs_more_data| F[clarify_data]
-    F -->|retry_parse| C
-    F -->|data_quality_issue| G[data_quality_issue]
-    E -->|proceed| H[rule_check]
-    H --> I[router_diagnostic]
-    I -->|urgent| J[high_risk_fast_track]
-    I -->|rag_llm| K[diagnostic_uncertain]
-    I -->|rule_only| L[low_risk_observation]
-    K --> M[rag_retrieval]
-    M --> N[llm_assess]
-    J --> O[router_management]
-    L --> O
-    N --> O
-    O -->|monitor| P[monitor_plan]
-    O -->|recommend_treatment| Q[recommend_treatment]
-    O -->|finalize| R[output_save]
-    P --> R
-    Q --> R
-    G --> R
-    R --> S[JSON output + patients.csv]
+    Start["Input: structured или free-text"] --> FreeText{"free_text?"}
+    FreeText -->|yes| ParseHistory[llm_parse_history]
+    FreeText -->|no| ParseInput[parse_input]
+    ParseHistory --> ParseInput
+    ParseInput --> Pretriage[router_pretriage]
+    Pretriage -->|needs_more_data| Clarify[clarify_data]
+    Clarify -->|retry_parse| ParseHistory
+    Clarify -->|data_quality_issue| DataIssue[data_quality_issue]
+    Pretriage -->|proceed| RuleCheck[rule_check]
+    RuleCheck --> Diagnostic[router_diagnostic]
+    Diagnostic -->|urgent| FastTrack[high_risk_fast_track]
+    Diagnostic -->|rag_llm| Uncertain[diagnostic_uncertain]
+    Diagnostic -->|rule_only| Observation[low_risk_observation]
+    Uncertain --> RagRetrieval[rag_retrieval]
+    RagRetrieval --> LlmAssess[llm_assess]
+    FastTrack --> Management[router_management]
+    Observation --> Management
+    LlmAssess --> Management
+    Management -->|monitor| MonitorPlan[monitor_plan]
+    Management -->|recommend_treatment| Recommend[recommend_treatment]
+    Management -->|finalize| OutputSave[output_save]
+    MonitorPlan --> OutputSave
+    Recommend --> OutputSave
+    DataIssue --> OutputSave
 ```
 
-## Оркестрация между workflow (вертикальная схема для слайда)
+## Логика ветвления
 
-```mermaid
-graph TD
-    A[Workflow A: Triage Graph]
-    A --> R{triage_category}
-    R -->|data_quality_issue| B[Workflow B: Data Collection / Clarification]
-    R -->|high_risk_fast_track| C[Workflow C: Urgent Management]
-    R -->|diagnostic_uncertain| D[Workflow D: Extended Diagnostics]
-    R -->|low_risk_observation| E[Workflow E: Monitoring]
+- `router_pretriage`: достаточно ли данных для безопасного продолжения.
+- `router_diagnostic`: вести ли кейс в `urgent`, `rag_llm` или `rule_only`.
+- `router_management`: нужен ли мониторинг, лечебные подсказки или финализация.
+- Если `confidence` роутера низкий, система переключается в безопасную fallback-ветку.
+- Критичные поля (`troponin`, `ecg_changes`, `hr`, `bp`) контролируются отдельно.
 
-    B --> A
-    D --> A
-    E --> A
-    C --> F[Clinical Summary / Report]
-```
+## RAG в текущей реализации
 
-## Логика ветвления (кратко)
+- База рекомендаций хранится локально в `data/guidelines/*.txt`.
+- Retriever использует `Chroma PersistentClient`.
+- Dense retrieval строится на `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`.
+- Поверх семантического поиска включен lexical scoring.
+- Для топ-кандидатов используется cross-encoder reranking:
+  `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`.
+- В ответах сохраняются `citations` и информация о странице/чанке.
 
-- `router_pretriage`: данных хватает? (`proceed` / `needs_more_data`)
-- `router_diagnostic`: куда после правил? (`urgent` / `rag_llm` / `rule_only`)
-- `router_management`: что делать после оценки? (`monitor` / `recommend_treatment` / `finalize`)
-- Если `confidence` роутера низкий, включается fallback-ветка (guardrail).
+## Web UI и API
 
-## Модели и зависимости
+Web-интерфейс находится в `src/web/` и поддерживает:
 
-`requirements.txt`:
-- `langgraph`
-- `pydantic`
-- `pandas`
-- `pytest`
-- `ollama`
+- быструю вкладку `Оценка ОКС`;
+- карточку пациента и историю визитов;
+- активный кейс с риском, протоколом и completion;
+- CRUD для `Vitals / Labs / Studies / Procedures / Medications / Diagnoses`;
+- Excel template download и Excel import;
+- историю оценок и клинические отчеты.
 
-Рекомендуемые модели:
-- `qwen2.5:7b-instruct`
-- `qwen2.5:3b-instruct`
+Ключевые API-эндпоинты:
+
+- `POST /api/assess`
+- `POST /api/cases/start`
+- `POST /api/cases/{id}/resume`
+- `POST /api/cases/{id}/reassess`
+- `POST /api/cases/{id}/close`
+- `POST /api/cases/{id}/reopen`
+- `POST /api/cases/{id}/report`
+- `GET /api/cases/{id}/control`
+- `GET /api/catalog`
+- `POST /api/cases/{id}/excel-import`
 
 ## Установка
 
@@ -112,34 +150,40 @@ python -m src.infrastructure.rag.rag_setup
 ollama pull qwen2.5:7b-instruct
 ollama pull qwen2.5:3b-instruct
 ```
-## Настройка Базы Данных (PostgreSQL)
-Необходимо:
+
+## Настройка базы данных
+
+Нужно:
+
 1. Установить PostgreSQL.
-2. При установке задать пароль (например, admin).
-3. Открыть программу pgAdmin 4 и создать там пустую базу данных с названием acs_db.
+2. Создать пустую базу `acs_db`.
+3. Указать `DATABASE_URL` в `.env`.
 
-Перед запуском:
-Создайте в корне проекта файл .env и укажите данные для подключения (замените ВАШ_ПАРОЛЬ):
+Пример:
+
+```env
 DATABASE_URL=postgresql://postgres:ВАШ_ПАРОЛЬ@localhost:5432/acs_db
+OLLAMA_MODEL=qwen2.5:7b-instruct
+OLLAMA_MODEL_B=qwen2.5:3b-instruct
+```
 
-Выполните первичную миграцию (создание таблиц и тестовых пациентов):
+Первичная инициализация:
 
 ```bash
-  python -m src.infrastructure.db.init_db
+python -m src.infrastructure.db.init_db
 ```
-## Запуск Web-интерфейса
 
-Запустите сервер FastAPI:
+## Запуск web-интерфейса
 
 ```bash
-  python -m uvicorn src.web.api:app --reload
+python -m uvicorn src.web.api:app --reload
 ```
-После запуска откройте в браузере: http://127.0.0.1:8000
 
+После запуска откройте [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
-## Прямой запуск из корня проекта (python)
+## CLI-запуск
 
-### Structured (расширенные поля)
+### Structured
 
 ```bash
 python -m src.cli.main \
@@ -192,45 +236,64 @@ python -m src.cli.main \
   --force-llm
 ```
 
-PowerShell использует перенос строки через `` ` `` (обратный апостроф), а не `\`.
+PowerShell использует перенос строки через `` ` ``, а не `\`.
 
-## Что в выходном JSON
+## Что возвращает система
 
-- `risk`, `risk_level`, `explanation`, `record_id`
-- `llm_used`
+- `risk`, `risk_level`, `explanation`
+- `triage_category`, `next_step`
+- `route_confidence`, `route_reason`
 - `parse_confidence`, `missing_fields`
-- `route_confidence`, `next_step`, `triage_category`, `route_reason`
+- `llm_used`
+- `record_id`
 
-## Скрипты
+## Демонстрационные материалы
 
-- `./scripts/run.sh` — запуск (single/ab/free-text)
-- `./scripts/test.sh` — тесты
+Готовые презентационные артефакты находятся в `examples/demo_cases/`:
+
+- реальные `.xlsx`-кейсы для импорта через UI;
+- JSON/markdown-описания тестовых сценариев;
+- кейс, близкий к реальной карте пациента из `Итог.png`;
+- ожидаемые outcome для демонстрации в презентации.
 
 ## Структура проекта
 
 ```text
 .
 ├── data/
+│   ├── chroma/
 │   ├── guidelines/
+│   ├── ocr/
 │   └── patients.csv
+├── examples/
+│   └── demo_cases/
 ├── scripts/
+│   ├── migrate_v2.py
 │   ├── run.sh
 │   └── test.sh
 ├── src/
-│   ├── cli/main.py
-│   ├── core/                 # graph, nodes, prompts, tools, state
-│   ├── infrastructure/       # db + rag
-│   └── medical/              # rules + scores
-├── tests/unit/test_rules.py
-├── .env.example
-├── .gitattributes
-├── .gitignore
-├── requirements.txt
-└── README.md
+│   ├── cli/
+│   ├── core/                  # graph, report_graph, workflow runner, prompts, tools
+│   ├── evaluation/            # метрики и evaluation runner
+│   ├── infrastructure/        # db, importers, rag
+│   ├── medical/               # catalog, protocols, rules, scores
+│   └── web/                   # API, services, static, templates
+├── tests/
+│   └── unit/
+├── tmp_runs/
+├── README.md
+└── requirements.txt
 ```
+
+## Что пока не сделано
+
+- Раздел аналитики в web UI.
+- Полноценный датасет с формально оформленными результатами evaluation.
+- Внешняя клиническая валидация на реальном размеченном наборе случаев.
+- Автоматизированный сбор клинических данных из внешних hospital systems.
 
 ## Ограничения и дисклеймер
 
-- Это прототип для исследований/обучения, не медицинское изделие.
+- Это исследовательский прототип, не медицинское изделие.
 - Не использовать для реальной диагностики и назначения лечения.
 - Любой вывод требует клинической верификации врачом.

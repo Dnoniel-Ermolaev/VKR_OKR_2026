@@ -213,11 +213,34 @@ def data_quality_issue(state: AgentState) -> AgentState:
     }
 
 
+def _build_rag_query(patient: Dict[str, object]) -> str:
+    fields = [
+        "acs triage clinical recommendations",
+        f"pain_type: {patient.get('pain_type', '')}",
+        f"ecg_changes: {patient.get('ecg_changes', '')}",
+        f"troponin: {patient.get('troponin', '')}",
+        f"hr: {patient.get('hr', '')}",
+        f"bp: {patient.get('bp', '')}",
+        f"spo2: {patient.get('spo2', '')}",
+        f"creatinine: {patient.get('creatinine', '')}",
+        f"killip_class: {patient.get('killip_class', '')}",
+        f"age: {patient.get('age', '')}",
+        f"gender: {patient.get('gender', '')}",
+        f"symptoms: {patient.get('symptoms_text', '')}",
+    ]
+    return "\n".join(str(item) for item in fields if str(item).strip())
+
+
 def rag_retrieval(state: AgentState) -> AgentState:
     patient = state["patient_data"]
-    query = f"{patient.get('pain_type', '')} {patient.get('ecg_changes', '')} troponin {patient.get('troponin', '')}"
-    snippets = RETRIEVER.retrieve(query=query, top_k=3)
-    return {"rag_context": "\n---\n".join(snippets)}
+    query = _build_rag_query(patient)
+    hits = RETRIEVER.retrieve_hits(query=query, top_k=3)
+    snippets = [hit.formatted_text(rank=idx + 1) for idx, hit in enumerate(hits)]
+    citations = [hit.citation for hit in hits]
+    return {
+        "rag_context": "\n---\n".join(snippets),
+        "citations": citations,
+    }
 
 
 def llm_assess(state: AgentState) -> AgentState:
@@ -235,12 +258,16 @@ def llm_assess(state: AgentState) -> AgentState:
         level = "medium"
     else:
         level = "low"
+    citations = list(state.get("citations", []))
+    if citations:
+        explanation = f"{explanation} Источники: {'; '.join(citations[:3])}."
     return {
         "risk": new_risk,
         "risk_level": level,
         "explanation": explanation,
         "llm_used": llm_used,
         "triage_category": "diagnostic_uncertain",
+        "citations": citations,
     }
 
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.infrastructure.rag.retriever import GuidelinesRetriever
+
 
 def ensure_guidelines_seeded(guidelines_dir: Path) -> Path:
     guidelines_dir.mkdir(parents=True, exist_ok=True)
@@ -19,7 +21,22 @@ def ensure_guidelines_seeded(guidelines_dir: Path) -> Path:
     return seed_file
 
 
+def build_rag_index(base_dir: Path) -> int:
+    guidelines_dir = base_dir / "data" / "guidelines"
+    ensure_guidelines_seeded(guidelines_dir)
+    retriever = GuidelinesRetriever(
+        guidelines_dir,
+        persist_dir=base_dir / "data" / "chroma",
+    )
+    cleaned = retriever.clean_guideline_files()
+    if cleaned:
+        print(f"Cleaned guideline files: {cleaned}")
+    return retriever.index_documents(force=True)
+
+
 if __name__ == "__main__":
     base = Path(__file__).resolve().parents[3]
     seeded = ensure_guidelines_seeded(base / "data" / "guidelines")
+    chunks = build_rag_index(base)
     print(f"Guideline seed ready: {seeded}")
+    print(f"Indexed chunks: {chunks}")

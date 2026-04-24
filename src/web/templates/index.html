@@ -75,6 +75,10 @@
                 
                 <!-- Блок для вывода результата -->
                 <pre id="resultOutput" class="console-output">Здесь появится результат...</pre>
+                <div id="resultCitationsPanel" class="citations-panel" style="display: none;">
+                    <h4>Источники RAG</h4>
+                    <div id="resultCitationsList" class="citations-list"></div>
+                </div>
             </div>
 
             <!-- Вкладка: Пациент -->
@@ -85,9 +89,9 @@
                         <div class="empty-state">Выберите пациента для просмотра визитов</div>
                     </div>
                     
-                    <!-- Правая часть: Анализы и статистика -->
+                    <!-- Правая часть: Контроль кейса -->
                     <div class="dashboard-panel" id="statsPanel">
-                        <div class="empty-state">Выберите пациента для просмотра анализов</div>
+                        <div class="empty-state">Выберите пациента для управления кейсом ОКС</div>
                     </div>
                 </div>
             </div>
