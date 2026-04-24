@@ -1,0 +1,189 @@
+{
+  "patient_info": {
+    "age": 67,
+    "gender": "male",
+    "admission_time": "2026-01-07T00:00:00Z",
+    "diagnosis_summary": "Дилатация обоих предсердий, снижение систолической функции левого желудочка (48%), эхокардиография показала изменение структуры митрального и трикуспидального клапанов.",
+    "name": "не указано"
+  },
+  "diagnoses": [
+    {
+      "name": "Нестабильная стенокардия",
+      "kind": "primary",
+      "source_page": 1
+    },
+    {
+      "name": "не указано",
+      "kind": "unknown",
+      "source_page": null
+    },
+    {
+      "name": "ишемия миокарда",
+      "kind": "unknown",
+      "source_page": 6
+    },
+    {
+      "name": "стенокардия",
+      "kind": "primary",
+      "source_page": 17
+    },
+    {
+      "name": "постинфарктная стенокардия",
+      "kind": "complication",
+      "source_page": 17
+    },
+    {
+      "name": "атероматоз коронарных артерий",
+      "kind": "primary",
+      "source_page": 25
+    },
+    {
+      "name": "ИБС",
+      "kind": "primary",
+      "source_page": 40
+    },
+    {
+      "name": "острый передний инфаркт миокарда с ST",
+      "kind": "complication",
+      "source_page": 40
+    },
+    {
+      "name": "гипертоническая болезнь III ст.",
+      "kind": "comorbidity",
+      "source_page": 40
+    },
+    {
+      "name": "Дилатация обоих предсердий",
+      "kind": "primary",
+      "source_page": 43
+    },
+    {
+      "name": "Снижение систолической функции левого желудочка (ФВ 48%)",
+      "kind": "primary",
+      "source_page": 43
+    },
+    {
+      "name": "Инфарктный инсульт/инфаркт миокарда (не указан)",
+      "kind": "comorbidity",
+      "source_page": null
+    },
+    {
+      "name": "Умеренная недостаточность митрального и трикуспидального клапанов с регургитацией (1-2 ст.)",
+      "kind": "primary",
+      "source_page": 43
+    },
+    {
+      "name": "Признаки кардиосклероза; фиброзные изменения аортального клапана и аорты",
+      "kind": "complication",
+      "source_page": 43
+    },
+    {
+      "name": "Незначительная легочная гипертензия",
+      "kind": "comorbidity",
+      "source_page": null
+    }
+  ],
+  "labs": [
+    {
+      "name": "Tropin I",
+      "value_num": 0.17,
+      "value_text": null,
+      "unit": "ng/mL",
+      "status": "completed",
+      "recorded_at": "2026-01-07T12:27:00",
+      "source_page": 5
+    },
+    {
+      "name": "CKI",
+      "value_num": null,
+      "value_text": "1-22",
+      "unit": "нг/мл",
+      "status": "completed",
+      "recorded_at": null,
+      "source_page": 40
+    },
+    {
+      "name": "ЧСС",
+      "value_num": 62,
+      "value_text": null,
+      "unit": "в мин",
+      "status": "completed",
+      "recorded_at": null,
+      "source_page": 40
+    }
+  ],
+  "vitals": [
+    {
+      "name": "Дыхание",
+      "value_num": 16,
+      "value_text": null,
+      "unit": "в мин",
+      "recorded_at": "2026-01-12T10:00:00Z",
+      "source_page": 42,
+      "status": "completed"
+    },
+    {
+      "name": "ЧСС",
+      "value_num": 60,
+      "value_text": "",
+      "unit": "уд/мин",
+      "recorded_at": null,
+      "source_page": 43,
+      "status": "completed"
+    }
+  ],
+  "studies": [
+    {
+      "name": "ТЛТ",
+      "result": "не проводилась; c начала симптомов прошло менее 12 часов",
+      "status": "ordered",
+      "source_page": 17
+    },
+    {
+      "name": "ЭКГ",
+      "result": "",
+      "status": "ordered",
+      "source_page": 18
+    },
+    {
+      "name": "селективная коронарография (СКГ)",
+      "result": "правый тип коронарного кровотока; атероматоз; ог. стеноз",
+      "status": "completed",
+      "source_page": 25
+    },
+    {
+      "name": "Эхо-КГ",
+      "result": null,
+      "status": "completed",
+      "source_page": 40
+    },
+    {
+      "name": "Эхокардиография",
+      "result": "Дилатация обоих предсердий; снижение систолической функции левого желудочка (ФВ 48%); умеренная недостаточность митрального и трикуспидального клапанов с регургитацией (1-2 ст.); признаки кардиосклероза; фиброзные изменения аортального клапана и аорты; незначительная легочная гипертензия",
+      "status": "completed",
+      "source_page": 43
+    }
+  ],
+  "procedures": [
+    {
+      "name": "селективная коронарография",
+      "status": "planned",
+      "source_page": 17
+    },
+    {
+      "name": "стентирование передней нисходящей артерии (ПНА)",
+      "status": "completed",
+      "source_page": 25
+    },
+    {
+      "name": "стентирование ПНА",
+      "status": "completed",
+      "source_page": 40
+    }
+  ],
+  "medications": [],
+  "follow_up": [],
+  "confidence": 0.833,
+  "chunks": 9,
+  "source_name": "itog_easyocr.txt"
+}

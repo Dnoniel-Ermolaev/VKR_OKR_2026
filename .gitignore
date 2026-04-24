@@ -13,7 +13,6 @@ htmlcov/
 build/
 dist/
 *.egg-info/
-data/
 
 # Virtual environments
 .venv/
@@ -31,15 +30,26 @@ env/
 .env.local
 .env.*.local
 .env.*
+!.env.example
+
+# Project data: keep demo corpora and RAG index,
+# ignore only machine-local outputs and databases.
+data/*
+!data/guidelines/
+!data/guidelines/**
+!data/chroma/
+!data/chroma/**
+!data/ocr/
+!data/ocr/**
+!data/patients.csv
+!data/acs_db_backup.sql
 
 # Local runtime data and generated outputs
-data/patients.csv
-data/*.json
 data/*.db
 data/*.sqlite
 data/*.sqlite3
-data/chroma/
 data/faiss/
+tmp_runs/
 
 # Database
 *.db
