@@ -34,26 +34,35 @@
 
 ```mermaid
 flowchart TD
-    WebUI["Web UI + FastAPI"]
-    CaseApi["Case / Catalog / Excel API"]
-    ExcelImport["ExcelImportService"]
-    Repo["SQL Repository + PostgreSQL"]
-    CaseControl["Protocol-driven control"]
-    TriageGraph["Triage LangGraph"]
-    ReportGraph["Clinical report graph"]
-    RAG["Local RAG (Chroma)"]
+    A[Web UI]
+    B[FastAPI]
+    C[Case API]
+    D[Excel Import]
+    E[SQL Repository]
+    F[PostgreSQL]
+    G[Triage Graph]
+    H[Case Control]
+    I[Report Graph]
+    J[Local RAG]
 
-    WebUI --> CaseApi
-    WebUI --> ExcelImport
-    ExcelImport --> CaseApi
-    CaseApi --> Repo
-    CaseApi --> TriageGraph
-    CaseApi --> CaseControl
-    TriageGraph --> RAG
-    ReportGraph --> RAG
-    TriageGraph --> Repo
-    ReportGraph --> Repo
-    Repo --> CaseControl
+    A --> B
+    B --> C
+    B --> D
+
+    C --> E
+    D --> E
+    E --> F
+
+    C --> G
+    C --> H
+    C --> I
+
+    G --> J
+    I --> J
+
+    G --> E
+    I --> E
+    E --> H
 ```
 
 ### Что происходит в пользовательском сценарии
@@ -68,31 +77,41 @@ flowchart TD
 ## Архитектура triage-графа
 
 ```mermaid
-graph TD
-    Start["Input: structured или free-text"] --> FreeText{"free_text?"}
-    FreeText -->|yes| ParseHistory[llm_parse_history]
-    FreeText -->|no| ParseInput[parse_input]
-    ParseHistory --> ParseInput
-    ParseInput --> Pretriage[router_pretriage]
-    Pretriage -->|needs_more_data| Clarify[clarify_data]
-    Clarify -->|retry_parse| ParseHistory
-    Clarify -->|data_quality_issue| DataIssue[data_quality_issue]
-    Pretriage -->|proceed| RuleCheck[rule_check]
-    RuleCheck --> Diagnostic[router_diagnostic]
-    Diagnostic -->|urgent| FastTrack[high_risk_fast_track]
-    Diagnostic -->|rag_llm| Uncertain[diagnostic_uncertain]
-    Diagnostic -->|rule_only| Observation[low_risk_observation]
-    Uncertain --> RagRetrieval[rag_retrieval]
-    RagRetrieval --> LlmAssess[llm_assess]
-    FastTrack --> Management[router_management]
-    Observation --> Management
-    LlmAssess --> Management
-    Management -->|monitor| MonitorPlan[monitor_plan]
-    Management -->|recommend_treatment| Recommend[recommend_treatment]
-    Management -->|finalize| OutputSave[output_save]
-    MonitorPlan --> OutputSave
-    Recommend --> OutputSave
-    DataIssue --> OutputSave
+flowchart TD
+    A[Input: structured or free text] --> B{Free text}
+
+    B --> C[llm_parse_history]
+    B --> D[parse_input]
+
+    C --> D
+    D --> E[router_pretriage]
+
+    E --> F[clarify_data]
+    E --> G[rule_check]
+
+    F --> C
+    F --> H[data_quality_issue]
+
+    G --> I[router_diagnostic]
+
+    I --> J[high_risk_fast_track]
+    I --> K[diagnostic_uncertain]
+    I --> L[low_risk_observation]
+
+    K --> M[rag_retrieval]
+    M --> N[llm_assess]
+
+    J --> O[router_management]
+    L --> O
+    N --> O
+
+    O --> P[monitor_plan]
+    O --> Q[recommend_treatment]
+    O --> R[output_save]
+
+    P --> R
+    Q --> R
+    H --> R
 ```
 
 ## Логика ветвления
