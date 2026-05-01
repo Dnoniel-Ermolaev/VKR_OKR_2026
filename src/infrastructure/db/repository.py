@@ -41,13 +41,17 @@ DEFAULT_COLUMNS = [
 
 
 class PatientRepository:
+    """ Репозиторий для хранения пациентов в CSV-файле """
+
     def __init__(self, csv_path: Path) -> None:
+        """ Подготовка CSV-файла для хранения пациентов """
         self.csv_path = csv_path
         self.csv_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.csv_path.exists():
             self._init_empty()
 
     def save_patient(self, record: PatientRecord) -> None:
+        """ Сохранение пациента в CSV-файл """
         if pd is not None:
             df = pd.read_csv(self.csv_path)
             df = pd.concat([df, pd.DataFrame([record.model_dump()])], ignore_index=True)
@@ -64,6 +68,7 @@ class PatientRepository:
         risk_level: Optional[str] = None,
         top_k: int = 20,
     ) -> List[Dict[str, object]]:
+        """ Поиск пациентов в CSV-файле """
         if pd is not None:
             df = pd.read_csv(self.csv_path)
             if name:
@@ -84,6 +89,7 @@ class PatientRepository:
         return filtered[:top_k]
 
     def _init_empty(self) -> None:
+        """ Создание пустого CSV-файла с нужными колонками """
         if pd is not None:
             pd.DataFrame(columns=DEFAULT_COLUMNS).to_csv(self.csv_path, index=False)
             return
@@ -91,10 +97,13 @@ class PatientRepository:
             writer = csv.DictWriter(f, fieldnames=DEFAULT_COLUMNS)
             writer.writeheader()
 
-""" Классы для использовани ORM SQLAlchemy """
+# ---------- Классы для использования ORM SQLAlchemy ----------
 
 class sql_database_repository:
+    """ Репозиторий для работы с базой данных через SQLAlchemy """
+
     def __init__(self, session: Session):
+        """ Подключение сессии SQLAlchemy """
         self.session = session
 
     def get_all_patients(self):
@@ -106,21 +115,21 @@ class sql_database_repository:
         return self.session.query(Patient).filter(Patient.id == patient_id).first()
 
     def get_visit(self, visit_id: int) -> Visit | None:
+        """ Данные о визите пациента """
         return self.session.query(Visit).filter(Visit.id == visit_id).first()
 
     def create_case(
         self,
         *,
         patient_id: int | None,
-        visit_id: int | None,
         title: str,
         llm_model: str,
         initial_payload: Dict[str, Any],
         latest_payload: Dict[str, Any],
     ) -> TriageCase:
+        """ Создание клинического случая """
         case = TriageCase(
             patient_id=patient_id,
-            visit_id=visit_id,
             title=title,
             llm_model=llm_model,
             initial_payload=initial_payload,
@@ -132,9 +141,11 @@ class sql_database_repository:
         return case
 
     def get_case(self, case_id: str) -> TriageCase | None:
+        """ Данные клинического случая """
         return self.session.query(TriageCase).filter(TriageCase.id == case_id).first()
 
     def get_case_observations(self, case_id: str) -> List[CaseObservation]:
+        """ Список наблюдений клинического случая """
         return (
             self.session.query(CaseObservation)
             .filter(CaseObservation.case_id == case_id)
@@ -143,6 +154,7 @@ class sql_database_repository:
         )
 
     def get_case_assessments(self, case_id: str) -> List[CaseAssessment]:
+        """ Список оценок риска клинического случая """
         return (
             self.session.query(CaseAssessment)
             .filter(CaseAssessment.case_id == case_id)
@@ -151,6 +163,7 @@ class sql_database_repository:
         )
 
     def get_case_reports(self, case_id: str) -> List[ClinicalReport]:
+        """ Список клинических отчетов по случаю """
         return (
             self.session.query(ClinicalReport)
             .filter(ClinicalReport.case_id == case_id)
@@ -159,6 +172,7 @@ class sql_database_repository:
         )
 
     def get_case_tracking_items(self, case_id: str) -> List[CaseTrackingItem]:
+        """ Список задач наблюдения по случаю """
         return (
             self.session.query(CaseTrackingItem)
             .filter(CaseTrackingItem.case_id == case_id)
@@ -167,6 +181,7 @@ class sql_database_repository:
         )
 
     def list_patient_cases(self, patient_id: int) -> List[TriageCase]:
+        """ Список клинических случаев пациента """
         return (
             self.session.query(TriageCase)
             .filter(TriageCase.patient_id == patient_id)
@@ -175,6 +190,7 @@ class sql_database_repository:
         )
 
     def add_case_observations(self, case_id: str, observations: List[Dict[str, Any]]) -> List[CaseObservation]:
+        """ Добавление наблюдений к клиническому случаю """
         created: List[CaseObservation] = []
         for item in observations:
             recorded_at = self._parse_dt(item.get("recorded_at")) or datetime.now(timezone.utc)
@@ -199,6 +215,7 @@ class sql_database_repository:
         return created
 
     def update_case_observation(self, observation_id: int, **fields: Any) -> CaseObservation | None:
+        """ Обновление наблюдения клинического случая """
         obs = self.session.query(CaseObservation).filter(CaseObservation.id == observation_id).first()
         if obs is None:
             return None
@@ -212,6 +229,7 @@ class sql_database_repository:
         return obs
 
     def delete_case_observation(self, observation_id: int) -> bool:
+        """ Удаление наблюдения клинического случая """
         obs = self.session.query(CaseObservation).filter(CaseObservation.id == observation_id).first()
         if obs is None:
             return False
@@ -227,6 +245,7 @@ class sql_database_repository:
         payload_snapshot: Dict[str, Any],
         result: Dict[str, Any],
     ) -> CaseAssessment:
+        """ Сохранение оценки риска клинического случая """
         assessment = CaseAssessment(
             case_id=case_id,
             run_kind=run_kind,
@@ -255,6 +274,7 @@ class sql_database_repository:
         status: str,
         current_stage: str,
     ) -> TriageCase:
+        """ Обновление состояния клинического случая """
         case = self.get_case(case_id)
         if case is None:
             raise ValueError("Case not found")
@@ -283,6 +303,7 @@ class sql_database_repository:
         content: str,
         citations: List[str],
     ) -> ClinicalReport:
+        """ Сохранение клинического отчета """
         report = ClinicalReport(
             case_id=case_id,
             report_type=report_type,
@@ -295,6 +316,7 @@ class sql_database_repository:
         return report
 
     def replace_case_tracking_items(self, case_id: str, items: List[Dict[str, Any]]) -> List[CaseTrackingItem]:
+        """ Замена списка задач наблюдения по случаю """
         existing = self.session.query(CaseTrackingItem).filter(CaseTrackingItem.case_id == case_id).all()
         for row in existing:
             self.session.delete(row)
@@ -324,16 +346,16 @@ class sql_database_repository:
             self.session.refresh(row)
         return created
 
-    # ---------- Case lifecycle ----------
-    def get_active_case(self, patient_id: int | None, visit_id: int | None) -> TriageCase | None:
+    # ---------- Жизненный цикл клинического случая ----------
+    def get_active_case(self, patient_id: int | None) -> TriageCase | None:
+        """ Активный клинический случай пациента """
         query = self.session.query(TriageCase).filter(TriageCase.status.in_(["active", "awaiting_labs"]))
         if patient_id is not None:
             query = query.filter(TriageCase.patient_id == patient_id)
-        if visit_id is not None:
-            query = query.filter(TriageCase.visit_id == visit_id)
         return query.order_by(TriageCase.created_at.desc()).first()
 
     def close_case(self, case_id: str) -> TriageCase | None:
+        """ Закрытие клинического случая """
         case = self.get_case(case_id)
         if case is None:
             return None
@@ -346,6 +368,7 @@ class sql_database_repository:
         return case
 
     def reopen_case(self, case_id: str) -> TriageCase | None:
+        """ Повторное открытие клинического случая """
         case = self.get_case(case_id)
         if case is None:
             return None
@@ -357,8 +380,18 @@ class sql_database_repository:
         self.session.refresh(case)
         return case
 
-    # ---------- Studies ----------
+    def delete_case(self, case_id: str) -> bool:
+        """ Удаление клинического случая """
+        case = self.get_case(case_id)
+        if case is None:
+            return False
+        self.session.delete(case)
+        self.session.commit()
+        return True
+
+    # ---------- Исследования ----------
     def get_case_studies(self, case_id: str) -> List[CaseStudy]:
+        """ Список исследований по клиническому случаю """
         return (
             self.session.query(CaseStudy)
             .filter(CaseStudy.case_id == case_id)
@@ -367,6 +400,7 @@ class sql_database_repository:
         )
 
     def add_case_study(self, case_id: str, **fields: Any) -> CaseStudy:
+        """ Добавление исследования к клиническому случаю """
         started_at = self._parse_dt(fields.get("started_at"))
         completed_at = self._parse_dt(fields.get("completed_at"))
         study = CaseStudy(
@@ -388,6 +422,7 @@ class sql_database_repository:
         return study
 
     def update_case_study(self, study_id: int, **fields: Any) -> CaseStudy | None:
+        """ Обновление исследования клинического случая """
         study = self.session.query(CaseStudy).filter(CaseStudy.id == study_id).first()
         if study is None:
             return None
@@ -404,6 +439,7 @@ class sql_database_repository:
         return study
 
     def delete_case_study(self, study_id: int) -> bool:
+        """ Удаление исследования клинического случая """
         study = self.session.query(CaseStudy).filter(CaseStudy.id == study_id).first()
         if study is None:
             return False
@@ -411,8 +447,9 @@ class sql_database_repository:
         self.session.commit()
         return True
 
-    # ---------- Procedures ----------
+    # ---------- Процедуры ----------
     def get_case_procedures(self, case_id: str) -> List[CaseProcedure]:
+        """ Список процедур по клиническому случаю """
         return (
             self.session.query(CaseProcedure)
             .filter(CaseProcedure.case_id == case_id)
@@ -421,6 +458,7 @@ class sql_database_repository:
         )
 
     def add_case_procedure(self, case_id: str, **fields: Any) -> CaseProcedure:
+        """ Добавление процедуры к клиническому случаю """
         procedure = CaseProcedure(
             case_id=case_id,
             code=str(fields.get("code", "")).strip(),
@@ -439,6 +477,7 @@ class sql_database_repository:
         return procedure
 
     def update_case_procedure(self, procedure_id: int, **fields: Any) -> CaseProcedure | None:
+        """ Обновление процедуры клинического случая """
         procedure = self.session.query(CaseProcedure).filter(CaseProcedure.id == procedure_id).first()
         if procedure is None:
             return None
@@ -455,6 +494,7 @@ class sql_database_repository:
         return procedure
 
     def delete_case_procedure(self, procedure_id: int) -> bool:
+        """ Удаление процедуры клинического случая """
         procedure = self.session.query(CaseProcedure).filter(CaseProcedure.id == procedure_id).first()
         if procedure is None:
             return False
@@ -462,8 +502,9 @@ class sql_database_repository:
         self.session.commit()
         return True
 
-    # ---------- Medications ----------
+    # ---------- Препараты ----------
     def get_case_medications(self, case_id: str) -> List[CaseMedication]:
+        """ Список препаратов по клиническому случаю """
         return (
             self.session.query(CaseMedication)
             .filter(CaseMedication.case_id == case_id)
@@ -472,6 +513,7 @@ class sql_database_repository:
         )
 
     def add_case_medication(self, case_id: str, **fields: Any) -> CaseMedication:
+        """ Добавление препарата к клиническому случаю """
         med = CaseMedication(
             case_id=case_id,
             code=str(fields.get("code", "")).strip(),
@@ -493,6 +535,7 @@ class sql_database_repository:
         return med
 
     def update_case_medication(self, medication_id: int, **fields: Any) -> CaseMedication | None:
+        """ Обновление препарата клинического случая """
         med = self.session.query(CaseMedication).filter(CaseMedication.id == medication_id).first()
         if med is None:
             return None
@@ -507,6 +550,7 @@ class sql_database_repository:
         return med
 
     def delete_case_medication(self, medication_id: int) -> bool:
+        """ Удаление препарата клинического случая """
         med = self.session.query(CaseMedication).filter(CaseMedication.id == medication_id).first()
         if med is None:
             return False
@@ -514,8 +558,9 @@ class sql_database_repository:
         self.session.commit()
         return True
 
-    # ---------- Diagnoses ----------
+    # ---------- Диагнозы ----------
     def get_case_diagnoses(self, case_id: str) -> List[CaseDiagnosis]:
+        """ Список диагнозов по клиническому случаю """
         return (
             self.session.query(CaseDiagnosis)
             .filter(CaseDiagnosis.case_id == case_id)
@@ -524,6 +569,7 @@ class sql_database_repository:
         )
 
     def add_case_diagnosis(self, case_id: str, **fields: Any) -> CaseDiagnosis:
+        """ Добавление диагноза к клиническому случаю """
         diagnosis = CaseDiagnosis(
             case_id=case_id,
             icd10=str(fields.get("icd10", "")).strip().upper(),
@@ -538,6 +584,7 @@ class sql_database_repository:
         return diagnosis
 
     def update_case_diagnosis(self, diagnosis_id: int, **fields: Any) -> CaseDiagnosis | None:
+        """ Обновление диагноза клинического случая """
         diagnosis = self.session.query(CaseDiagnosis).filter(CaseDiagnosis.id == diagnosis_id).first()
         if diagnosis is None:
             return None
@@ -553,6 +600,7 @@ class sql_database_repository:
         return diagnosis
 
     def delete_case_diagnosis(self, diagnosis_id: int) -> bool:
+        """ Удаление диагноза клинического случая """
         diagnosis = self.session.query(CaseDiagnosis).filter(CaseDiagnosis.id == diagnosis_id).first()
         if diagnosis is None:
             return False
@@ -561,6 +609,7 @@ class sql_database_repository:
         return True
 
     def _parse_dt(self, value: Any) -> datetime | None:
+        """ Преобразование значения в дату и время """
         if isinstance(value, datetime):
             return value
         if isinstance(value, str) and value.strip():

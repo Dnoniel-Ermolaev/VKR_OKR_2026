@@ -46,6 +46,7 @@
         <div class="top-nav">
             <button class="tab-btn active" onclick="switchTab('main-tab', this)">Оценка ОКС</button>
             <button class="tab-btn" onclick="switchTab('patient-tab', this)">Пациент</button>
+            <button class="tab-btn" onclick="switchTab('hospital-tab', this)">Стационар</button>
             <button class="tab-btn" onclick="switchTab('settings-tab', this)">Настройки</button>
             <button class="tab-btn" onclick="switchTab('dev-tab', this)">Консоль</button>
         </div>
@@ -83,15 +84,30 @@
 
             <!-- Вкладка: Пациент -->
             <div id="patient-tab" class="tab-content">
-                <div class="patient-dashboard-grid">
+                <div class="patient-dashboard-grid visit-dashboard-grid">
                     <!-- Левая часть: Визиты -->
                     <div class="dashboard-panel" id="visitsPanel">
                         <div class="empty-state">Выберите пациента для просмотра визитов</div>
                     </div>
                     
-                    <!-- Правая часть: Контроль кейса -->
+                    <!-- Правая часть: будущая работа с единичным визитом -->
                     <div class="dashboard-panel" id="statsPanel">
-                        <div class="empty-state">Выберите пациента для управления кейсом ОКС</div>
+                        <div class="empty-state">Выберите пациента для работы с визитами</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Вкладка: Стационар -->
+            <div id="hospital-tab" class="tab-content">
+                <div class="patient-dashboard-grid hospital-dashboard-grid">
+                    <!-- Левая часть: список кейсов -->
+                    <div class="dashboard-panel" id="casesListPanel">
+                        <div class="empty-state">Выберите пациента для просмотра кейсов</div>
+                    </div>
+
+                    <!-- Правая часть: рабочая карточка кейса -->
+                    <div class="dashboard-panel case-workspace-panel" id="caseDetailsPanel">
+                        <div class="empty-state">Выберите кейс из списка слева</div>
                     </div>
                 </div>
             </div>

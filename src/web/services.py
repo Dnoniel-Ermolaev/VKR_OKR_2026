@@ -3,12 +3,11 @@ import shlex
 from datetime import datetime
 from typing import Any, Dict, List
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.cli.main import CLIParser
 from src.core.WorkflowRunner import workflow_runner
-from src.core.case_runtime import build_series, normalize_observations
+from src.core.case_runtime import build_case_title, build_series, normalize_observations
 from src.core.patient_control import build_case_control
 from src.infrastructure.db.models import Patient, TriageCase, Visit
 from src.infrastructure.db.repository import sql_database_repository
@@ -27,12 +26,18 @@ from src.medical.protocols import protocol_summary
 
 
 class PatientService:
-    """Сервис для управления бизнес-логикой работы с пациентами."""
+    """
+    Сервис для управления бизнес-логикой работы с пациентами.
+    Связывает контроллеры API с базой данных и преобразует данные пациента
+    в формат, удобный для отображения на веб-странице.
+    """
 
     def __init__(self, db_session: Session):
+        # :param db_session: Активная сессия SQLAlchemy для работы с базой данных.
         self.repo = sql_database_repository(db_session)
         self.db_session = db_session
 
+    # Получает список всех пациентов для отображения в боковой панели.
     def get_patients_for_sidebar(self) -> list[dict]:
         patients = self.repo.get_all_patients()
         return [
@@ -47,6 +52,11 @@ class PatientService:
         ]
 
     def add_visit(self, patient_id: int, date_str: str):
+        """
+        Регистрирует новый визит пациента
+        :param patient_id: Внутренний ID пациента.
+        :param date_str: Строка даты и времени в формате ISO.
+        """
         try:
             visit_date = datetime.fromisoformat(date_str)
             new_visit = Visit(patient_id=patient_id, admission_time=visit_date)
@@ -54,10 +64,14 @@ class PatientService:
             self.db_session.commit()
             return {"success": True, "visit_id": new_visit.id}
         except Exception as e:
-            self.db_session.rollback()
+            self.db_session.rollback() # Стираем все неудачные попытки записи
             return {"error": str(e)}
 
     def delete_visit(self, visit_id: int):
+        """
+        Удаляет запись о визите по его идентификатору
+        :param visit_id: ID визита в базе данных.
+        """
         try:
             visit = self.db_session.query(Visit).filter(Visit.id == visit_id).first()
             if not visit:
@@ -70,6 +84,10 @@ class PatientService:
             return {"error": str(e)}
 
     def add_patient(self, last_name: str, first_name: str, patronymic: str, birth_date_str: str, gender: str):
+        """
+        Регистрирует нового пациента в системе
+        Собирает полное имя из частей и преобразует строку даты в объект date
+        """
         try:
             full_name = f"{last_name} {first_name}"
             if patronymic:
@@ -78,12 +96,15 @@ class PatientService:
             new_patient = Patient(full_name=full_name.strip(), birth_date=b_date, gender=gender)
             self.db_session.add(new_patient)
             self.db_session.commit()
+
+            # Возвращаем красивый ID для отображения в интерфейсе
             display_id = f"П{new_patient.id:06d}"
             return {"success": True, "display_id": display_id, "id": new_patient.id}
         except Exception as e:
             self.db_session.rollback()
             return {"error": str(e)}
 
+    # Обновляет персональные данные существующего пациента.
     def update_patient(self, patient_id: int, last_name: str, first_name: str, patronymic: str, birth_date_str: str, gender: str):
         try:
             patient = self.db_session.query(Patient).filter(Patient.id == patient_id).first()
@@ -93,6 +114,8 @@ class PatientService:
             if patronymic:
                 full_name += f" {patronymic}"
             b_date = datetime.strptime(birth_date_str, "%Y-%m-%d").date()
+
+            # Обновляем поля карточки пациента
             patient.full_name = full_name.strip()
             patient.birth_date = b_date
             patient.gender = gender
@@ -102,21 +125,14 @@ class PatientService:
             self.db_session.rollback()
             return {"error": str(e)}
 
+    # Удаляет пациента и все связанные с ним визиты, кейсы и медицинские данные.
     def delete_patient(self, patient_id: int):
         try:
             patient = self.db_session.query(Patient).filter(Patient.id == patient_id).first()
             if not patient:
                 return {"error": "Пациент не найден"}
             # Явный порядок: кейсы (со всеми дочерними сущностями по cascade ORM) → визиты → пациент.
-            # Иначе PostgreSQL/FK и кейсы только по visit_id могут блокировать DELETE.
-            visit_ids = [
-                row[0]
-                for row in self.db_session.query(Visit.id).filter(Visit.patient_id == patient_id).all()
-            ]
-            case_filters = [TriageCase.patient_id == patient_id]
-            if visit_ids:
-                case_filters.append(TriageCase.visit_id.in_(visit_ids))
-            cases = self.db_session.query(TriageCase).filter(or_(*case_filters)).all()
+            cases = self.db_session.query(TriageCase).filter(TriageCase.patient_id == patient_id).all()
             for case in cases:
                 self.db_session.delete(case)
             visits = self.db_session.query(Visit).filter(Visit.patient_id == patient_id).all()
@@ -131,18 +147,32 @@ class PatientService:
 
 
 class TriageService:
-    """Сервис для работы с нейросетью и графом."""
+    """
+    Сервис для работы с нейросетью и графом.
+    Принимает данные из веб-формы или консоли и передает их в WorkflowRunner.
+    """
 
     @staticmethod
     def process_web_form(data: dict) -> dict:
+        """
+        Запускает оценку риска по данным, введенным в веб-форме
+        Использует быстрый режим без обязательного вызова LLM.
+        """
         app_config = {"require_llm": False, "force_llm": False, "llm_model": "qwen2.5:7b-instruct"}
         return workflow_runner.run_single(data, app_config)
 
     @staticmethod
     def process_console_command(command: str) -> dict:
+        """
+        Обрабатывает команду из веб-консоли
+        Преобразует многострочный ввод в строку CLI и запускает общий граф.
+        """
+        # Убираем все переносы строк и слеши, превращая ввод в одну длинную строку
         clean_cmd = command.replace("\\\n", " ").replace("\\", " ").replace("\n", " ")
         if "src.cli.main" in clean_cmd:
             clean_cmd = clean_cmd.split("src.cli.main")[1].strip()
+
+        # Парсим строку так же, как обычную команду CLI
         cli = CLIParser()
         parsed_args = cli.parser.parse_args(shlex.split(clean_cmd))
         raw_cli_data = vars(parsed_args)
@@ -155,6 +185,10 @@ class TriageService:
 
 
 def _app_config(data: dict) -> dict:
+    """
+    Собирает настройки запуска графа из входного словаря
+    Используется всеми сервисами, которые обращаются к WorkflowRunner.
+    """
     return {
         "require_llm": bool(data.get("require_llm", False)),
         "force_llm": bool(data.get("force_llm", False)),
@@ -163,10 +197,13 @@ def _app_config(data: dict) -> dict:
 
 
 def _serialize_case(case) -> Dict[str, Any]:
+    """
+    Преобразует ORM-модель кейса в JSON-словарь для фронтенда
+    Даты переводятся в ISO-строки, чтобы браузер мог их корректно читать.
+    """
     return {
         "id": case.id,
         "patient_id": case.patient_id,
-        "visit_id": case.visit_id,
         "title": case.title,
         "status": case.status,
         "current_stage": case.current_stage,
@@ -182,38 +219,63 @@ def _serialize_case(case) -> Dict[str, Any]:
 
 
 class CatalogService:
+    """
+    Сервис для выдачи медицинского каталога на фронтенд.
+    Возвращает справочники анализов, исследований, процедур, препаратов и диагнозов.
+    """
+
     @staticmethod
     def payload() -> dict:
+        """Возвращает весь каталог в формате JSON-словаря."""
         return catalog_as_json()
 
 
 class CaseService:
+    """
+    Сервис для управления стационарными кейсами пациента.
+    Кейс связан с пациентом напрямую, а анализы и исследования связаны уже с кейсом.
+    """
+
     def __init__(self, db_session: Session):
+        # :param db_session: Активная сессия SQLAlchemy для работы с кейсами.
         self.repo = sql_database_repository(db_session)
 
     def start_case(self, data: dict) -> dict:
+        """
+        Создает новый стационарный кейс пациента
+        """
         patient_id = data.get("patient_id")
-        visit_id = data.get("visit_id")
         raw_data = {
             k: v for k, v in data.items()
-            if k not in {"patient_id", "visit_id", "require_llm", "force_llm", "llm_model", "reuse_active"}
+            if k not in {"patient_id", "require_llm", "force_llm", "llm_model", "reuse_active"}
         }
-        app_config = _app_config(data)
-        reuse_active = bool(data.get("reuse_active", True))
-        return workflow_runner.start_case(
-            raw_data,
-            app_config,
-            self.repo,
+        case = self.repo.create_case(
             patient_id=patient_id,
-            visit_id=visit_id,
-            reuse_active=reuse_active,
+            title=build_case_title(raw_data),
+            llm_model=str(data.get("llm_model", "")),
+            initial_payload=raw_data,
+            latest_payload=raw_data,
         )
+        return {
+            "case_id": case.id,
+            "case_status": case.status,
+            "current_stage": case.current_stage,
+            "case": _serialize_case(case),
+        }
 
     def resume_case(self, case_id: str, data: dict) -> dict:
+        """
+        Продолжает кейс новыми наблюдениями
+        Нормализует входные наблюдения и запускает повторную оценку состояния.
+        """
         observations = normalize_observations(data.get("observations", []))
         return workflow_runner.resume_case(case_id, _app_config(data), self.repo, observations=observations)
 
     def get_case(self, case_id: str) -> dict:
+        """
+        Возвращает полную карточку кейса
+        В ответ входят наблюдения, анализы, исследования, назначения, диагнозы и отчеты.
+        """
         case = self.repo.get_case(case_id)
         if not case:
             return {"error": "Кейс не найден"}
@@ -273,28 +335,57 @@ class CaseService:
             "control_summary": summary,
         }
 
-    def get_active(self, patient_id: int | None, visit_id: int | None) -> dict:
-        case = self.repo.get_active_case(patient_id, visit_id)
+    def get_active(self, patient_id: int | None) -> dict:
+        """
+        Ищет активный кейс пациента
+        Нужен для быстрого восстановления незакрытой госпитализации.
+        """
+        case = self.repo.get_active_case(patient_id)
         if case is None:
             return {"case": None}
         return {"case": _serialize_case(case)}
 
     def close_case(self, case_id: str) -> dict:
+        """
+        Закрывает кейс пациента
+        Переводит кейс в завершенный статус без удаления данных.
+        """
         case = self.repo.close_case(case_id)
         if case is None:
             return {"error": "Кейс не найден"}
         return {"case": _serialize_case(case)}
 
     def reopen_case(self, case_id: str) -> dict:
+        """
+        Переоткрывает ранее закрытый кейс
+        Возвращает его в активный статус для дальнейшего наблюдения.
+        """
         case = self.repo.reopen_case(case_id)
         if case is None:
             return {"error": "Кейс не найден"}
         return {"case": _serialize_case(case)}
 
+    def delete_case(self, case_id: str) -> dict:
+        """
+        Удаляет кейс и все связанные с ним медицинские данные
+        Используется отдельной кнопкой удаления на карточке кейса.
+        """
+        if not self.repo.delete_case(case_id):
+            return {"error": "Кейс не найден"}
+        return {"success": True}
+
     def generate_report(self, case_id: str, data: dict) -> dict:
+        """
+        Генерирует клинический отчет или эпикриз по кейсу
+        Отчет строится на последних данных кейса и временных рядах наблюдений.
+        """
         return workflow_runner.generate_case_report(case_id, _app_config(data), self.repo)
 
     def get_control_dashboard(self, case_id: str) -> dict:
+        """
+        Собирает контрольную панель кейса
+        Рассчитывает протокол, трекинг выполнения, готовность и предупреждения.
+        """
         case = self.repo.get_case(case_id)
         if not case:
             return {"error": "Кейс не найден"}
@@ -325,13 +416,18 @@ class CaseService:
 
 
 # ---------------------------------------------------------------------------
-# Serializers
+# Сериализаторы данных для фронтенда
 # ---------------------------------------------------------------------------
 def _iso(value):
+    """Преобразует дату в ISO-строку или возвращает None."""
     return value.isoformat() if value else None
 
 
 def _serialize_observation(obs) -> Dict[str, Any]:
+    """
+    Преобразует наблюдение или анализ в JSON-словарь
+    Дополнительно подставляет референсные значения из медицинского каталога.
+    """
     ref_low = None
     ref_high = None
     if obs.code and obs.category == "lab" and obs.code in LAB_BY_CODE:
@@ -359,6 +455,7 @@ def _serialize_observation(obs) -> Dict[str, Any]:
 
 
 def _serialize_study(item) -> Dict[str, Any]:
+    """Преобразует инструментальное исследование в JSON-словарь."""
     return {
         "id": item.id,
         "case_id": item.case_id,
@@ -378,6 +475,7 @@ def _serialize_study(item) -> Dict[str, Any]:
 
 
 def _serialize_procedure(item) -> Dict[str, Any]:
+    """Преобразует процедуру или вмешательство в JSON-словарь."""
     return {
         "id": item.id,
         "case_id": item.case_id,
@@ -396,6 +494,7 @@ def _serialize_procedure(item) -> Dict[str, Any]:
 
 
 def _serialize_medication(item) -> Dict[str, Any]:
+    """Преобразует назначение препарата в JSON-словарь."""
     return {
         "id": item.id,
         "case_id": item.case_id,
@@ -417,6 +516,7 @@ def _serialize_medication(item) -> Dict[str, Any]:
 
 
 def _serialize_diagnosis(item) -> Dict[str, Any]:
+    """Преобразует диагноз в JSON-словарь."""
     return {
         "id": item.id,
         "case_id": item.case_id,
@@ -430,13 +530,20 @@ def _serialize_diagnosis(item) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Catalog-aware CRUD services
+# CRUD-сервисы, которые используют медицинский каталог
 # ---------------------------------------------------------------------------
 class ObservationService:
+    """
+    Сервис для работы с витальными показателями и лабораторными анализами.
+    Все записи привязаны к конкретному стационарному кейсу и имеют время записи.
+    """
+
     def __init__(self, db_session: Session):
+        # :param db_session: Активная сессия SQLAlchemy для работы с наблюдениями.
         self.repo = sql_database_repository(db_session)
 
     def list_vitals(self, case_id: str) -> list:
+        """Возвращает все витальные показатели выбранного кейса."""
         return [
             _serialize_observation(obs)
             for obs in self.repo.get_case_observations(case_id)
@@ -444,6 +551,7 @@ class ObservationService:
         ]
 
     def list_labs(self, case_id: str) -> list:
+        """Возвращает все лабораторные анализы выбранного кейса."""
         return [
             _serialize_observation(obs)
             for obs in self.repo.get_case_observations(case_id)
@@ -451,6 +559,10 @@ class ObservationService:
         ]
 
     def add_vital(self, case_id: str, data: dict) -> dict:
+        """
+        Добавляет новый витальный показатель
+        Код показателя сверяется с каталогом, а флаг нормы рассчитывается автоматически.
+        """
         code = str(data.get("code", "")).strip()
         if code not in VITAL_BY_CODE:
             return {"error": f"Неизвестный код витального показателя: {code}"}
@@ -474,6 +586,10 @@ class ObservationService:
         return _serialize_observation(obs[0])
 
     def add_lab(self, case_id: str, data: dict) -> dict:
+        """
+        Добавляет новый лабораторный анализ
+        Код анализа сверяется с каталогом, а флаг нормы рассчитывается автоматически.
+        """
         code = str(data.get("code", "")).strip()
         if code not in LAB_BY_CODE:
             return {"error": f"Неизвестный код анализа: {code}"}
@@ -498,13 +614,17 @@ class ObservationService:
         return _serialize_observation(obs[0])
 
     def update(self, observation_id: int, data: dict) -> dict:
+        """
+        Обновляет витальный показатель или анализ
+        При изменении числового значения пересчитывает флаг нормы.
+        """
         fields = dict(data)
         if "value_num" in fields:
             fields["value_num"] = _to_float(fields.get("value_num"))
         obs = self.repo.update_case_observation(observation_id, **fields)
         if obs is None:
             return {"error": "Наблюдение не найдено"}
-        # Recompute flag if value changed.
+        # Пересчитываем флаг, если изменилось значение показателя
         if obs.value_num is not None and obs.code:
             if obs.category == "lab":
                 new_flag = flag_for_lab(obs.code, float(obs.value_num))
@@ -517,19 +637,31 @@ class ObservationService:
         return _serialize_observation(obs)
 
     def delete(self, observation_id: int) -> dict:
+        """Удаляет витальный показатель или анализ по ID."""
         if not self.repo.delete_case_observation(observation_id):
             return {"error": "Наблюдение не найдено"}
         return {"success": True}
 
 
 class StudyService:
+    """
+    Сервис для работы с инструментальными исследованиями.
+    Создает, обновляет, удаляет и возвращает исследования, привязанные к кейсу.
+    """
+
     def __init__(self, db_session: Session):
+        # :param db_session: Активная сессия SQLAlchemy для работы с исследованиями.
         self.repo = sql_database_repository(db_session)
 
     def list(self, case_id: str) -> list:
+        """Возвращает список исследований выбранного кейса."""
         return [_serialize_study(item) for item in self.repo.get_case_studies(case_id)]
 
     def add(self, case_id: str, data: dict) -> dict:
+        """
+        Добавляет инструментальное исследование в кейс
+        Название берется из каталога, если пользователь передал только код.
+        """
         code = str(data.get("code", "")).strip()
         definition = STUDY_BY_CODE.get(code)
         name = data.get("name") or (definition.name_ru if definition else code)
@@ -549,25 +681,38 @@ class StudyService:
         return _serialize_study(item)
 
     def update(self, item_id: int, data: dict) -> dict:
+        """Обновляет данные инструментального исследования."""
         item = self.repo.update_case_study(item_id, **data)
         if item is None:
             return {"error": "Исследование не найдено"}
         return _serialize_study(item)
 
     def delete(self, item_id: int) -> dict:
+        """Удаляет инструментальное исследование по ID."""
         if not self.repo.delete_case_study(item_id):
             return {"error": "Исследование не найдено"}
         return {"success": True}
 
 
 class ProcedureService:
+    """
+    Сервис для работы с процедурами и вмешательствами.
+    Все процедуры относятся к конкретному стационарному кейсу.
+    """
+
     def __init__(self, db_session: Session):
+        # :param db_session: Активная сессия SQLAlchemy для работы с процедурами.
         self.repo = sql_database_repository(db_session)
 
     def list(self, case_id: str) -> list:
+        """Возвращает список процедур выбранного кейса."""
         return [_serialize_procedure(item) for item in self.repo.get_case_procedures(case_id)]
 
     def add(self, case_id: str, data: dict) -> dict:
+        """
+        Добавляет процедуру или вмешательство
+        Название подставляется из каталога, если для кода есть справочная запись.
+        """
         code = str(data.get("code", "")).strip()
         definition = PROCEDURE_BY_CODE.get(code)
         name = data.get("name") or (definition.name_ru if definition else code)
@@ -586,25 +731,38 @@ class ProcedureService:
         return _serialize_procedure(item)
 
     def update(self, item_id: int, data: dict) -> dict:
+        """Обновляет процедуру или вмешательство."""
         item = self.repo.update_case_procedure(item_id, **data)
         if item is None:
             return {"error": "Процедура не найдена"}
         return _serialize_procedure(item)
 
     def delete(self, item_id: int) -> dict:
+        """Удаляет процедуру или вмешательство по ID."""
         if not self.repo.delete_case_procedure(item_id):
             return {"error": "Процедура не найдена"}
         return {"success": True}
 
 
 class MedicationService:
+    """
+    Сервис для работы с медикаментозными назначениями.
+    При добавлении может подставлять класс, дозу, единицу и путь введения из каталога.
+    """
+
     def __init__(self, db_session: Session):
+        # :param db_session: Активная сессия SQLAlchemy для работы с назначениями.
         self.repo = sql_database_repository(db_session)
 
     def list(self, case_id: str) -> list:
+        """Возвращает список назначений выбранного кейса."""
         return [_serialize_medication(item) for item in self.repo.get_case_medications(case_id)]
 
     def add(self, case_id: str, data: dict) -> dict:
+        """
+        Добавляет медикаментозное назначение
+        Если часть полей не передана, заполняет их типовыми значениями из каталога.
+        """
         code = str(data.get("code", "")).strip()
         definition = MEDICATION_BY_CODE.get(code)
         name = data.get("name") or (definition.name_ru if definition else code)
@@ -630,25 +788,38 @@ class MedicationService:
         return _serialize_medication(item)
 
     def update(self, item_id: int, data: dict) -> dict:
+        """Обновляет медикаментозное назначение."""
         item = self.repo.update_case_medication(item_id, **data)
         if item is None:
             return {"error": "Назначение не найдено"}
         return _serialize_medication(item)
 
     def delete(self, item_id: int) -> dict:
+        """Удаляет медикаментозное назначение по ID."""
         if not self.repo.delete_case_medication(item_id):
             return {"error": "Назначение не найдено"}
         return {"success": True}
 
 
 class DiagnosisService:
+    """
+    Сервис для работы с диагнозами кейса.
+    Использует каталог МКБ-10 для подстановки названия диагноза по коду.
+    """
+
     def __init__(self, db_session: Session):
+        # :param db_session: Активная сессия SQLAlchemy для работы с диагнозами.
         self.repo = sql_database_repository(db_session)
 
     def list(self, case_id: str) -> list:
+        """Возвращает список диагнозов выбранного кейса."""
         return [_serialize_diagnosis(item) for item in self.repo.get_case_diagnoses(case_id)]
 
     def add(self, case_id: str, data: dict) -> dict:
+        """
+        Добавляет диагноз в кейс
+        Код МКБ-10 нормализуется к верхнему регистру, название берется из каталога.
+        """
         icd10 = str(data.get("icd10", "")).strip().upper()
         definition = DIAGNOSIS_BY_ICD.get(icd10)
         name = data.get("name") or (definition.name_ru if definition else icd10)
@@ -663,22 +834,31 @@ class DiagnosisService:
         return _serialize_diagnosis(item)
 
     def update(self, item_id: int, data: dict) -> dict:
+        """Обновляет диагноз."""
         item = self.repo.update_case_diagnosis(item_id, **data)
         if item is None:
             return {"error": "Диагноз не найден"}
         return _serialize_diagnosis(item)
 
     def delete(self, item_id: int) -> dict:
+        """Удаляет диагноз по ID."""
         if not self.repo.delete_case_diagnosis(item_id):
             return {"error": "Диагноз не найден"}
         return {"success": True}
 
 
 class ReassessService:
+    """
+    Сервис для повторной оценки стационарного кейса.
+    Запускает WorkflowRunner на уже накопленных данных кейса без добавления новых наблюдений.
+    """
+
     def __init__(self, db_session: Session):
+        # :param db_session: Активная сессия SQLAlchemy для повторной оценки.
         self.repo = sql_database_repository(db_session)
 
     def run(self, case_id: str, data: dict | None = None) -> dict:
+        """Запускает переоценку риска и обновляет состояние кейса."""
         return workflow_runner.resume_case(
             case_id,
             _app_config(data or {}),
@@ -688,9 +868,13 @@ class ReassessService:
 
 
 # ---------------------------------------------------------------------------
-# Utility
+# Вспомогательные функции
 # ---------------------------------------------------------------------------
 def _to_float(value) -> float | None:
+    """
+    Безопасно преобразует входное значение в float
+    Поддерживает строки с запятой и возвращает None для пустых или неверных значений.
+    """
     if value is None or value == "":
         return None
     try:

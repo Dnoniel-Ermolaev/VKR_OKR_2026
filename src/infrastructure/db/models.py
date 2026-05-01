@@ -12,10 +12,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.infrastructure.db.database import Base
 
 
-RiskLevel = Literal["low", "medium", "high"]
-CaseStatus = Literal["active", "awaiting_labs", "completed"]
+RiskLevel = Literal["low", "medium", "high"] # Тип риска
 
+CaseStatus = Literal["active", "awaiting_labs", "completed"] # Тип статуса кейса
 
+# Модель данных пациента
 class PatientData(BaseModel):
     name: str = Field(min_length=1)
     age: int | None = Field(default=None, ge=0, le=120)
@@ -91,7 +92,8 @@ class PatientRecord(BaseModel):
             explanation=explanation,
         )
 
-
+""" Классы для использовани ORM SQLAlchemy """
+ # Наследуемся от Base (класс Base из SQLAlchemy)
 class Patient(Base):
     __tablename__ = "patients"
 
@@ -100,7 +102,10 @@ class Patient(Base):
     birth_date: Mapped[date] = mapped_column(Date)
     gender: Mapped[str] = mapped_column(String(10))
 
+     # Связь "Один ко многим": пациент -> визиты
     visits = relationship("Visit", back_populates="patient", cascade="all, delete-orphan")
+
+     # Связь "Один ко многим": пациент -> стационарные кейсы
     cases = relationship("TriageCase", back_populates="patient", cascade="all, delete-orphan")
 
 
@@ -111,8 +116,8 @@ class Visit(Base):
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"))
     admission_time: Mapped[datetime] = mapped_column(DateTime)
 
+     # Связь "Многие к одному" (визиты к пациентам)
     patient = relationship("Patient", back_populates="visits")
-    cases = relationship("TriageCase", back_populates="visit", cascade="all, delete-orphan")
 
 
 class TriageCase(Base):
@@ -120,12 +125,16 @@ class TriageCase(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     patient_id: Mapped[int | None] = mapped_column(ForeignKey("patients.id"), nullable=True, index=True)
-    visit_id: Mapped[int | None] = mapped_column(ForeignKey("visits.id"), nullable=True, index=True)
+
+    # Трекинг состояния кейса (активен, закрыт, на каком этапе)
     status: Mapped[str] = mapped_column(String(32), default="active", index=True)
     current_stage: Mapped[str] = mapped_column(String(64), default="start")
+
     title: Mapped[str] = mapped_column(String(200), default="ACS case")
     llm_model: Mapped[str] = mapped_column(String(120), default="")
     initial_payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    # Последние результаты оценки
     latest_payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     latest_risk: Mapped[float | None] = mapped_column(Float, nullable=True)
     latest_risk_level: Mapped[str] = mapped_column(String(16), default="low")
@@ -133,13 +142,13 @@ class TriageCase(Base):
     latest_next_step: Mapped[str] = mapped_column(String(64), default="")
     latest_explanation: Mapped[str] = mapped_column(Text, default="")
     latest_citations: Mapped[list[str]] = mapped_column(JSON, default=list)
+
     missing_fields_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     patient = relationship("Patient", back_populates="cases")
-    visit = relationship("Visit", back_populates="cases")
     observations = relationship("CaseObservation", back_populates="case", cascade="all, delete-orphan")
     assessments = relationship("CaseAssessment", back_populates="case", cascade="all, delete-orphan")
     reports = relationship("ClinicalReport", back_populates="case", cascade="all, delete-orphan")
@@ -149,7 +158,7 @@ class TriageCase(Base):
     medications = relationship("CaseMedication", back_populates="case", cascade="all, delete-orphan")
     diagnoses = relationship("CaseDiagnosis", back_populates="case", cascade="all, delete-orphan")
 
-
+# Витальные показатели и Анализы
 class CaseObservation(Base):
     __tablename__ = "case_observations"
 
@@ -168,7 +177,7 @@ class CaseObservation(Base):
 
     case = relationship("TriageCase", back_populates="observations")
 
-
+# История оценок риска
 class CaseAssessment(Base):
     __tablename__ = "case_assessments"
 
@@ -189,7 +198,7 @@ class CaseAssessment(Base):
 
     case = relationship("TriageCase", back_populates="assessments")
 
-
+# Клинические отчеты от LLM
 class ClinicalReport(Base):
     __tablename__ = "clinical_reports"
 
@@ -202,7 +211,7 @@ class ClinicalReport(Base):
 
     case = relationship("TriageCase", back_populates="reports")
 
-
+# Элементы трекинга (задачи, наблюдения, исследования)
 class CaseTrackingItem(Base):
     __tablename__ = "case_tracking_items"
 
@@ -222,7 +231,7 @@ class CaseTrackingItem(Base):
 
     case = relationship("TriageCase", back_populates="tracking_items")
 
-
+# Исследования
 class CaseStudy(Base):
     __tablename__ = "case_studies"
 
@@ -243,7 +252,7 @@ class CaseStudy(Base):
 
     case = relationship("TriageCase", back_populates="studies")
 
-
+# Процедуры
 class CaseProcedure(Base):
     __tablename__ = "case_procedures"
 
@@ -263,7 +272,7 @@ class CaseProcedure(Base):
 
     case = relationship("TriageCase", back_populates="procedures")
 
-
+# Лекарства
 class CaseMedication(Base):
     __tablename__ = "case_medications"
 
@@ -286,7 +295,7 @@ class CaseMedication(Base):
 
     case = relationship("TriageCase", back_populates="medications")
 
-
+# Диагнозы
 class CaseDiagnosis(Base):
     __tablename__ = "case_diagnoses"
 

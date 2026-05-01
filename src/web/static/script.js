@@ -8,6 +8,8 @@ let currentReportPreview = null;
 let currentCaseSubTab = 'vitals';
 let medicalCatalog = null;
 let excelImportReport = null;
+let caseBusy = false;
+let caseBusyMessage = '';
 
 const CASE_SUBTABS = [
     { id: 'vitals',       label: 'Витальные' },
@@ -317,12 +319,13 @@ async function selectPatient(patientId) {
             currentCaseControl = null;
         }
         const nameInput = document.getElementById('ptName');
-        if (nameInput && !nameInput.value.trim()) {
+        if (nameInput) {
             nameInput.value = patient.full_name;
         }
 
         updateSelectionUI(patientId);
         renderPatientDashboard();
+        renderHospitalDashboard();
 
     } catch (error) {
         console.error("Ошибка при получении деталей:", error);
@@ -354,6 +357,7 @@ function unselectPatient() {
     document.getElementById('activePatientText').innerText = 'Пациент не выбран';
     document.getElementById('unselectBtn').style.display = 'none';
     renderPatientDashboard();
+    renderHospitalDashboard();
 }
 
 function renderPatientDashboard() {
@@ -362,15 +366,15 @@ function renderPatientDashboard() {
 
     if (!currentPatient) {
         visitsPanel.innerHTML = '<div class="empty-state">Выберите пациента для просмотра визитов</div>';
-        statsPanel.innerHTML = '<div class="empty-state">Выберите пациента для управления кейсом ОКС</div>';
+        statsPanel.innerHTML = '<div class="empty-state">Выберите пациента для работы с визитами</div>';
         return;
     }
 
-    visitsPanel.innerHTML = renderVisitsAndCasesPanel();
-    statsPanel.innerHTML = renderCasePanel();
+    visitsPanel.innerHTML = renderVisitsPanel();
+    statsPanel.innerHTML = renderVisitContextPanel();
 }
 
-function renderVisitsAndCasesPanel() {
+function renderVisitsPanel() {
     const visits = currentPatient.visits || [];
     const visitsHtml = visits.length
         ? [...visits].reverse().map(v => `
@@ -381,44 +385,98 @@ function renderVisitsAndCasesPanel() {
         `).join('')
         : "<p class='empty-inline'>Визитов пока нет</p>";
 
-    const cases = currentPatient.cases || [];
-    const casesHtml = cases.length
-        ? cases.map(item => {
-            const activeClass = currentCaseId === item.id ? 'case-card active' : 'case-card';
-            return `
-                <div class="${activeClass}" onclick="selectCase('${item.id}')">
-                    <div class="case-card-title">${escapeHtml(item.title || item.id)}</div>
-                    <div class="case-card-meta">
-                        <span class="pill pill-${caseStatusClass(item.status)}">${escapeHtml(item.status || '—')}</span>
-                        <span>${escapeHtml(item.latest_risk_level || '')}</span>
-                    </div>
-                    <div class="muted-line">${escapeHtml(item.current_stage || '')}</div>
-                </div>
-            `;
-        }).join('')
-        : "<p class='empty-inline'>Кейсов пока нет. Создай новый.</p>";
-
     return `
         <div class="section-title-row">
-            <h4 style="margin: 0; color: #334155;">Пациент</h4>
+            <h4 style="margin: 0; color: #334155;">История визитов</h4>
             <button class="small-btn" onclick="openVisitModal()">+ Визит</button>
         </div>
         <div class="info-card">
             <div><b>${escapeHtml(currentPatient.full_name)}</b></div>
             <div class="muted-line">ID: ${currentPatient.display_id || currentPatient.id} | Дата рождения: ${escapeHtml(currentPatient.birth_date)}</div>
         </div>
-
-        <div class="section-title-row" style="margin-top: 16px;">
-            <h4 style="margin: 0; color: #334155;">Визиты</h4>
-        </div>
         ${visitsHtml}
+    `;
+}
 
-        <div class="section-title-row" style="margin-top: 18px;">
-            <h4 style="margin: 0; color: #334155;">Клинические кейсы</h4>
-            <button class="small-btn" onclick="createNewCase()">+ Новый кейс</button>
+function renderVisitContextPanel() {
+    const visits = currentPatient.visits || [];
+    const latestVisit = visits.length ? visits[visits.length - 1] : null;
+
+    return `
+        <div class="section-title-row">
+            <h4 style="margin: 0; color: #334155;">Карточка визитов</h4>
+        </div>
+        <div class="info-card">
+            <div><b>${escapeHtml(currentPatient.full_name)}</b></div>
+            <div class="muted-line">Всего визитов: ${visits.length}</div>
+            <div class="muted-line">Последний визит: ${latestVisit ? escapeHtml(latestVisit.date) : 'нет данных'}</div>
+        </div>
+        <div class="empty-inline">
+            Раздел оставлен для будущей логики единичных визитов. Постоянное наблюдение, анализы,
+            исследования, переоценка и эпикриз перенесены во вкладку «Стационар».
+        </div>
+    `;
+}
+
+function renderHospitalDashboard() {
+    const casesListPanel = document.getElementById('casesListPanel');
+    const caseDetailsPanel = document.getElementById('caseDetailsPanel');
+    if (!casesListPanel || !caseDetailsPanel) return;
+
+    if (!currentPatient) {
+        casesListPanel.innerHTML = '<div class="empty-state">Выберите пациента для просмотра кейсов</div>';
+        caseDetailsPanel.innerHTML = '<div class="empty-state">Выберите кейс из списка слева</div>';
+        return;
+    }
+
+    casesListPanel.innerHTML = renderCasesListPanel();
+    caseDetailsPanel.innerHTML = renderCasePanel();
+}
+
+function renderCasesListPanel() {
+    const cases = [...(currentPatient.cases || [])].sort((a, b) => {
+        const statusOrder = { active: 0, awaiting_labs: 1, completed: 2 };
+        const byStatus = (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
+        if (byStatus !== 0) return byStatus;
+        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    });
+
+    const casesHtml = cases.length
+        ? cases.map(item => {
+            const activeClass = currentCaseId === item.id ? 'case-card active' : 'case-card';
+            const statusTagClass = item.status === 'completed'
+                ? 'case-status-closed'
+                : item.status === 'awaiting_labs'
+                    ? 'case-status-waiting'
+                    : 'case-status-open';
+            return `
+                <div class="${activeClass}" onclick="selectCase('${item.id}')">
+                    <div class="case-card-title">${escapeHtml(item.title || item.id)}</div>
+                    <div class="case-card-meta">
+                        <span class="case-status-tag ${statusTagClass}">${escapeHtml(caseStatusLabel(item.status))}</span>
+                        <span>${escapeHtml(item.latest_risk_level || '')}</span>
+                    </div>
+                    <div class="muted-line">Создан: ${escapeHtml(formatDt(item.created_at))}</div>
+                    <div class="muted-line">Этап: ${escapeHtml(item.current_stage || '—')}</div>
+                </div>
+            `;
+        }).join('')
+        : "";
+
+    return `
+        <div class="section-title-row">
+            <h4 style="margin: 0; color: #334155;">Кейсы</h4>
+            <button class="small-btn" onclick="createNewCase()">+ Новый</button>
         </div>
         ${casesHtml}
     `;
+}
+
+function caseStatusLabel(status) {
+    if (status === 'active') return 'Открыт';
+    if (status === 'awaiting_labs') return 'Ожидает анализы';
+    if (status === 'completed') return 'Закрыт';
+    return status || '—';
 }
 
 function caseStatusClass(status) {
@@ -446,11 +504,18 @@ function renderCasePanel() {
         : '<div class="empty-inline">Alert-сигналов нет</div>';
 
     const closed = info.status === 'completed';
+    const disabledAttr = caseBusy ? 'disabled' : '';
     const lifecycleButtons = closed
-        ? `<button class="small-btn" onclick="reopenCase()">Переоткрыть</button>`
-        : `<button class="small-btn" onclick="reassessCase()">Переоценить</button>
-           <button class="small-btn" onclick="generateCaseReport()">Эпикриз</button>
-           <button class="small-btn" onclick="closeCase()">Закрыть</button>`;
+        ? `<button class="small-btn" onclick="reopenCase()" ${disabledAttr}>Переоткрыть</button>`
+        : `<button class="small-btn" onclick="reassessCase()" ${disabledAttr}>Переоценить</button>
+           <button class="small-btn" onclick="generateCaseReport()" ${disabledAttr}>Эпикриз</button>
+           <button class="small-btn" onclick="closeCase()" ${disabledAttr}>Закрыть</button>`;
+    const busyHtml = caseBusy
+        ? `<div class="case-busy-panel">
+               <span class="case-spinner"></span>
+               <span>${escapeHtml(caseBusyMessage || 'Команда получена, идут вычисления...')}</span>
+           </div>`
+        : '';
 
     return `
         <div class="case-banner case-banner-${caseStatusClass(info.status)}">
@@ -459,10 +524,14 @@ function renderCasePanel() {
                     <div class="case-banner-title">${escapeHtml(info.title || info.id)}</div>
                     <div class="muted-line">ID ${escapeHtml(info.id)} | Статус: <b>${escapeHtml(info.status || '—')}</b> | Этап: ${escapeHtml(info.current_stage || '—')}</div>
                 </div>
-                <div class="button-row">
-                    ${lifecycleButtons}
+                <div class="case-action-row">
+                    <div class="button-row">
+                        ${lifecycleButtons}
+                    </div>
+                    <button class="small-btn danger-soft" onclick="deleteCase()" ${disabledAttr}>Удалить</button>
                 </div>
             </div>
+            ${busyHtml}
             <div class="case-banner-bottom">
                 <div class="metric-card"><span class="metric-label">Риск</span><span class="metric-value">${escapeHtml(info.latest_risk_level || '—')}</span></div>
                 <div class="metric-card"><span class="metric-label">Категория</span><span class="metric-value">${escapeHtml(info.latest_triage_category || '—')}</span></div>
@@ -502,7 +571,23 @@ function renderCaseSubPanel() {
 
 function setCaseSubTab(id) {
     currentCaseSubTab = id;
-    renderPatientDashboard();
+    renderHospitalDashboard();
+}
+
+function setCaseBusy(isBusy, message = '') {
+    caseBusy = isBusy;
+    caseBusyMessage = message;
+    renderHospitalDashboard();
+}
+
+async function runCaseBusyAction(message, action) {
+    if (caseBusy) return null;
+    setCaseBusy(true, message);
+    try {
+        return await action();
+    } finally {
+        setCaseBusy(false, '');
+    }
 }
 
 function renderVitalsSubTab() {
@@ -813,7 +898,7 @@ async function selectCase(caseId) {
     currentReportPreview = null;
     excelImportReport = null;
     await refreshActiveCase();
-    renderPatientDashboard();
+    renderHospitalDashboard();
 }
 
 async function ensureCatalog() {
@@ -827,12 +912,10 @@ async function createNewCase() {
         alert('Сначала выберите пациента.');
         return;
     }
-    const latestVisit = currentPatient.visits && currentPatient.visits.length
-        ? currentPatient.visits[currentPatient.visits.length - 1] : null;
     const payload = {
         patient_id: currentPatient.id,
-        visit_id: latestVisit ? latestVisit.id : null,
         ...getAssessmentFormPayload(),
+        name: currentPatient.full_name,
         symptoms_text: 'Создано из UI (структурированный ввод)',
         // Кнопка называется "Новый кейс", поэтому не переиспользуем старый active case.
         reuse_active: false,
@@ -854,22 +937,24 @@ async function createNewCase() {
     currentCaseId = result.case_id;
     await selectPatient(currentPatient.id);
     currentCaseSubTab = 'vitals';
-    renderPatientDashboard();
+    renderHospitalDashboard();
 }
 
 async function reassessCase() {
     if (!currentCaseId) return;
-    const result = await apiJson(`/api/cases/${currentCaseId}/reassess`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ llm_model: 'qwen2.5:7b-instruct' }),
+    await runCaseBusyAction('Команда получена, идет переоценка риска...', async () => {
+        const result = await apiJson(`/api/cases/${currentCaseId}/reassess`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ llm_model: 'qwen2.5:7b-instruct' }),
+        });
+        if (result.error) {
+            alert(`Ошибка переоценки: ${result.error}`);
+            return;
+        }
+        await refreshActiveCase();
     });
-    if (result.error) {
-        alert(`Ошибка переоценки: ${result.error}`);
-        return;
-    }
-    await refreshActiveCase();
-    renderPatientDashboard();
+    renderHospitalDashboard();
 }
 
 async function closeCase() {
@@ -887,18 +972,34 @@ async function reopenCase() {
     await selectPatient(currentPatient.id);
 }
 
+async function deleteCase() {
+    if (!currentCaseId || !currentPatient) return;
+    if (!confirm('Удалить кейс и все связанные с ним данные? Это действие необратимо.')) return;
+    const deletedCaseId = currentCaseId;
+    const result = await apiJson(`/api/cases/${deletedCaseId}`, { method: 'DELETE' });
+    if (result.error) { alert(result.error); return; }
+    currentCaseId = null;
+    currentCaseDetails = null;
+    currentCaseControl = null;
+    currentReportPreview = null;
+    excelImportReport = null;
+    await selectPatient(currentPatient.id);
+}
+
 async function generateCaseReport() {
     if (!currentCaseId) return;
-    const result = await apiJson(`/api/cases/${currentCaseId}/report`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ llm_model: 'qwen2.5:7b-instruct' }),
+    await runCaseBusyAction('Команда получена, формируется эпикриз...', async () => {
+        const result = await apiJson(`/api/cases/${currentCaseId}/report`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ llm_model: 'qwen2.5:7b-instruct' }),
+        });
+        if (result.error) { alert(`Ошибка генерации: ${result.error}`); return; }
+        currentReportPreview = result;
+        currentCaseSubTab = 'reports';
+        await refreshActiveCase();
     });
-    if (result.error) { alert(`Ошибка генерации: ${result.error}`); return; }
-    currentReportPreview = result;
-    currentCaseSubTab = 'reports';
-    await refreshActiveCase();
-    renderPatientDashboard();
+    renderHospitalDashboard();
 }
 
 // -------------------- CRUD modals --------------------
@@ -926,14 +1027,20 @@ async function openObservationModal(category) {
                 note: values.note || '',
                 auto_reassess: true,
             };
-            const result = await apiJson(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+            const result = await runCaseBusyAction('Запись сохранена, идет автоматическая переоценка...', async () => {
+                const response = await apiJson(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!response.error) {
+                    await refreshActiveCase();
+                }
+                return response;
             });
+            if (!result) return false;
             if (result.error) { alert(result.error); return false; }
-            await refreshActiveCase();
-            renderPatientDashboard();
+            renderHospitalDashboard();
             return true;
         },
     });
@@ -945,7 +1052,7 @@ async function deleteObservation(id, category) {
     const result = await apiJson(url, { method: 'DELETE' });
     if (result.error) { alert(result.error); return; }
     await refreshActiveCase();
-    renderPatientDashboard();
+    renderHospitalDashboard();
 }
 
 async function openEntityModal(kind) {
@@ -1040,14 +1147,20 @@ async function openEntityModal(kind) {
 }
 
 async function submitCrud(url, payload) {
-    const result = await apiJson(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+    const result = await runCaseBusyAction('Запись сохранена, идет автоматическая переоценка...', async () => {
+        const response = await apiJson(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!response.error) {
+            await refreshActiveCase();
+        }
+        return response;
     });
+    if (!result) return false;
     if (result.error) { alert(result.error); return false; }
-    await refreshActiveCase();
-    renderPatientDashboard();
+    renderHospitalDashboard();
     return true;
 }
 
@@ -1058,7 +1171,7 @@ async function deleteEntity(kind, id) {
     const result = await apiJson(url, { method: 'DELETE' });
     if (result.error) { alert(result.error); return; }
     await refreshActiveCase();
-    renderPatientDashboard();
+    renderHospitalDashboard();
 }
 
 async function uploadExcel(dryRun) {
@@ -1070,13 +1183,18 @@ async function uploadExcel(dryRun) {
     const fd = new FormData();
     fd.append('file', fileInput.files[0]);
     const url = `/api/cases/${currentCaseId}/excel-import?dry_run=${dryRun ? 'true' : 'false'}`;
-    const response = await fetch(url, { method: 'POST', body: fd });
-    const result = await response.json();
-    excelImportReport = result;
-    if (!dryRun && !result.error) {
-        await refreshActiveCase();
-    }
-    renderPatientDashboard();
+    await runCaseBusyAction(
+        dryRun ? 'Проверяем Excel-файл...' : 'Импортируем Excel и обновляем оценку...',
+        async () => {
+            const response = await fetch(url, { method: 'POST', body: fd });
+            const result = await response.json();
+            excelImportReport = result;
+            if (!dryRun && !result.error) {
+                await refreshActiveCase();
+            }
+        }
+    );
+    renderHospitalDashboard();
 }
 
 // -------------------- Generic modal --------------------
