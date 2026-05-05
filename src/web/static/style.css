@@ -763,6 +763,21 @@ body {
     border-left-color: #dc2626;
 }
 
+.assessment-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: #ffffff;
+}
+
+.assessment-citations {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
 .report-card {
     border: 1px solid #e2e8f0;
     border-radius: 8px;

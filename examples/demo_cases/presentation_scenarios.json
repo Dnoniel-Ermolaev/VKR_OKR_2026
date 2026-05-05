@@ -59,5 +59,102 @@
       ]
     },
     "reference_output": "../../tmp_runs/run3_sparse.json"
+  },
+  {
+    "id": "rag_uncertain_case_demo",
+    "surface": "UI / case reassess",
+    "purpose": "Показать двухшаговый сценарий: сначала data_quality_issue на вкладке 'Оценка ОКС', затем неочевидный кейс с принудительным LLM+RAG reassess.",
+    "input": {
+      "assessment_form": {
+        "name": "Пациент RAG demo",
+        "pain_type": "atypical",
+        "ecg_changes": "ST-depression V4-V6, неспецифические ишемические изменения",
+        "troponin": 0.08,
+        "hr": 96,
+        "bp": "145/90"
+      },
+      "case_enrichment": {
+        "vitals": {
+          "spo2": 96
+        },
+        "labs": [
+          { "code": "troponin_i", "value": 0.08 },
+          { "code": "creatinine_blood", "value": 98 }
+        ],
+        "studies": [
+          { "code": "ecg_12", "status": "done", "result_text": "ST-depression V4-V6, неспецифические ишемические изменения" }
+        ],
+        "constraints": [
+          "не добавлять диагноз I21.0",
+          "не добавлять ST-elevation",
+          "не добавлять выполненные ЧКВ/коронарографию"
+        ]
+      },
+      "reassess_payload": {
+        "llm_model": "qwen2.5:7b-instruct",
+        "force_llm": true
+      }
+    },
+    "expected": {
+      "step_1": {
+        "triage_category": "data_quality_issue",
+        "llm_used": true,
+        "citations": []
+      },
+      "step_2": {
+        "triage_category": "diagnostic_uncertain",
+        "llm_used": true,
+        "citations_non_empty": true
+      }
+    }
+  },
+  {
+    "id": "llm_force_difference_demo",
+    "surface": "UI / case reassess",
+    "purpose": "Показать различие между обычной переоценкой и переоценкой с принудительным LLM+RAG на одном и том же несложном case.",
+    "input": {
+      "assessment_form": {
+        "name": "Пациент LLM toggle",
+        "pain_type": "atypical",
+        "ecg_changes": "нормальная ЭКГ, без ишемических изменений",
+        "troponin": 0.02,
+        "hr": 78,
+        "bp": "120/80"
+      },
+      "case_enrichment": {
+        "vitals": {
+          "spo2": 97
+        },
+        "labs": [
+          { "code": "troponin_i", "value": 0.02 },
+          { "code": "creatinine_blood", "value": 84 }
+        ],
+        "studies": [
+          { "code": "ecg_12", "status": "done", "result_text": "нормальная ЭКГ, без ишемических изменений" }
+        ],
+        "constraints": [
+          "не добавлять диагноз I21.0",
+          "не добавлять ST-elevation",
+          "не добавлять выполненные ЧКВ/коронарографию",
+          "не добавлять высокие значения тропонина"
+        ]
+      },
+      "reassess_payload": {
+        "llm_model": "qwen2.5:7b-instruct",
+        "force_llm": true
+      }
+    },
+    "expected": {
+      "step_1": {
+        "triage_category": "low_risk_observation",
+        "llm_used": true,
+        "citations": []
+      },
+      "step_2": {
+        "triage_category": "diagnostic_uncertain",
+        "llm_used": true,
+        "citations_non_empty": true
+      }
+    }
   }
 ]
