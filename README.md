@@ -98,16 +98,9 @@ python -m src.infrastructure.db.init_db
 
 Этот скрипт:
 
-- создаёт таблицы;
-- добавляет тестовых пациентов, если база пуста.
-
-Если база уже старая и после обновления проекта не хватает колонок, выполните:
-
-```bash
-python -m scripts.upgrade_db_schema
-```
-
-Скрипт `scripts.migrate_v2` нужен только для миграции старых tracking-данных из предыдущей версии проекта. Для чистого запуска он не обязателен.
+- создаёт недостающие таблицы;
+- проверяет существующие таблицы и добавляет недостающие колонки по ORM-моделям;
+- не заполняет базу тестовыми пациентами.
 
 ### 3. Альтернатива: восстановление готовой demo-базы
 
@@ -422,8 +415,8 @@ python -m src.cli.main \
 ├── examples/
 │   └── demo_cases/
 ├── scripts/
-│   ├── migrate_v2.py
-│   └── upgrade_db_schema.py
+│   ├── run.sh
+│   └── test.sh
 ├── src/
 │   ├── cli/
 │   ├── core/
@@ -510,7 +503,6 @@ flowchart TD
 
 ```bash
 python -m src.infrastructure.db.init_db
-python -m scripts.upgrade_db_schema
 ```
 
 ### RAG не отдаёт citations

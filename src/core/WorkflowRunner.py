@@ -76,11 +76,10 @@ class workflow_runner:
         repository: Any,
         *,
         patient_id: int | None = None,
-        visit_id: int | None = None,
         reuse_active: bool = True,
     ) -> dict:
-        if reuse_active and (patient_id is not None or visit_id is not None):
-            existing = repository.get_active_case(patient_id, visit_id)
+        if reuse_active and patient_id is not None:
+            existing = repository.get_active_case(patient_id)
             if existing is not None:
                 return {
                     "case_id": existing.id,
@@ -92,7 +91,6 @@ class workflow_runner:
         latest_payload = dict(payload.get("patient_data", {}))
         case = repository.create_case(
             patient_id=patient_id,
-            visit_id=visit_id,
             title=build_case_title(latest_payload),
             llm_model=str(app_config.get("llm_model", "")),
             initial_payload=latest_payload,
