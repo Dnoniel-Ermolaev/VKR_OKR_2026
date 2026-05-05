@@ -31,6 +31,8 @@
 - `structured_high_risk_assess`
 - `free_text_demo`
 - `data_quality_demo`
+- `rag_uncertain_case_demo`
+- `llm_force_difference_demo`
 
 Что показывать:
 
@@ -102,6 +104,71 @@
 - `completion_percent = 100.0`
 - `critical_pending = []`
 - в alerts остается только сообщение о критически высоком тропонине, что клинически ожидаемо
+
+### `rag_uncertain_case_demo`
+
+Что демонстрирует:
+
+- сначала LLM-router может остановить workflow на `data_quality_issue`;
+- затем тот же случай переводится в case-based режим;
+- после частичного дообогащения кейса и принудительного `force_llm` reassess система уходит в `diagnostic_uncertain`;
+- в истории `Оценки` становятся видны `LLM`, количество `RAG`-источников и сами `citations`.
+
+Как показывать:
+
+1. На вкладке `Оценка ОКС` ввести:
+   - `pain_type = typical`
+   - `ecg_changes = ST-depression V4-V6, неспецифические ишемические изменения`
+   - `troponin = 0.12`
+   - `hr = 102`
+   - `bp = 145/90`
+2. Получить первый ответ с `data_quality_issue`.
+3. Создать новый кейс из текущей формы.
+4. В кейсе добавить:
+   - `SpO2 = 96`
+   - `troponin_i = 0.08`
+   - `creatinine_blood = 98`
+   - исследование `ecg_12` со статусом `done`
+5. Не добавлять:
+   - `I21.0`
+   - `ST-elevation`
+   - выполненные ЧКВ / коронарографию
+6. Нажать `Переоценить LLM+RAG`.
+
+Ожидаемо:
+
+- первая запись в истории оценок: `data_quality_issue`, `LLM`, без `RAG`;
+- вторая запись: `diagnostic_uncertain`, `LLM`, с непустыми `citations`.
+
+### `llm_force_difference_demo`
+
+Что демонстрирует:
+
+- один и тот же case даёт разные результаты на обычной переоценке и на `Переоценить LLM+RAG`;
+- обычный reassess остаётся в `low_risk_observation`;
+- принудительный reassess уходит в `diagnostic_uncertain` и показывает citations.
+
+Как показывать:
+
+1. На вкладке `Оценка ОКС` ввести:
+   - `pain_type = atypical`
+   - `ecg_changes = нормальная ЭКГ, без ишемических изменений`
+   - `troponin = 0.02`
+   - `hr = 78`
+   - `bp = 120/80`
+2. Получить оценку и создать кейс.
+3. В кейсе добавить:
+   - `SpO2 = 97`
+   - `troponin_i = 0.02`
+   - `creatinine_blood = 84`
+   - исследование `ecg_12` со статусом `done`
+4. Сначала нажать обычное `Переоценить`.
+5. Потом нажать `Переоценить LLM+RAG`.
+
+Ожидаемо:
+
+- обычный reassess: `low_risk_observation`, `LLM`, без `RAG`;
+- reassess с LLM: `diagnostic_uncertain`, `LLM`, с непустыми `citations`.
 
 ## Замечание по ожидаемым результатам
 

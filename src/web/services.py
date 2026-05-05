@@ -316,6 +316,9 @@ class CaseService:
                     "next_step": item.next_step,
                     "route_reason": item.route_reason,
                     "explanation": item.explanation,
+                    "citations": item.citations_json,
+                    "missing_fields": item.missing_fields_json,
+                    "llm_used": item.llm_used,
                     "created_at": item.created_at.isoformat(),
                 }
                 for item in assessments

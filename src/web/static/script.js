@@ -772,20 +772,44 @@ function renderAssessmentsSubTab() {
         : '<div class="empty-inline">Трекинг протокола пуст</div>';
 
     const assessHtml = assessments.length
-        ? assessments.slice().reverse().map(a => `
-            <div class="list-row">
-                <span><b>${escapeHtml(a.run_kind)}</b> · ${escapeHtml(a.risk_level || '')} · ${escapeHtml(a.triage_category || '')}</span>
-                <span>${escapeHtml(formatDt(a.created_at))}</span>
+        ? assessments.slice().reverse().map(a => {
+            const citations = Array.isArray(a.citations) ? a.citations : [];
+            const missingFields = Array.isArray(a.missing_fields) ? a.missing_fields : [];
+            const llmBadge = a.llm_used
+                ? '<span class="pill pill-active">LLM</span>'
+                : '<span class="pill pill-neutral">Rules only</span>';
+            const ragBadge = citations.length
+                ? `<span class="pill pill-warn">RAG ${citations.length}</span>`
+                : '<span class="pill pill-neutral">No RAG</span>';
+
+            return `
+            <div class="assessment-card">
+                <div class="list-row">
+                    <span><b>${escapeHtml(a.run_kind)}</b> · ${escapeHtml(a.risk_level || '')} · ${escapeHtml(a.triage_category || '')}</span>
+                    <span>${escapeHtml(formatDt(a.created_at))}</span>
+                </div>
+                <div class="button-row" style="margin:6px 0 8px;">
+                    ${llmBadge}
+                    ${ragBadge}
+                    ${a.next_step ? `<span class="pill pill-neutral">${escapeHtml(a.next_step)}</span>` : ''}
+                </div>
+                ${a.route_reason ? `<div class="muted-line" style="margin-bottom:6px;"><b>Роутинг:</b> ${escapeHtml(a.route_reason)}</div>` : ''}
+                ${missingFields.length ? `<div class="muted-line" style="margin-bottom:6px;"><b>Недостающие поля:</b> ${escapeHtml(missingFields.join(', '))}</div>` : ''}
+                ${a.explanation ? `<div class="muted-line" style="margin-bottom:8px;">${escapeHtml(a.explanation)}</div>` : ''}
+                ${citations.length ? `<div class="assessment-citations">${citations.map(c => `<div class="citation-item">${escapeHtml(c)}</div>`).join('')}</div>` : ''}
             </div>
-            ${a.explanation ? `<div class="muted-line" style="margin-bottom:8px;">${escapeHtml(a.explanation)}</div>` : ''}
-        `).join('')
+        `;
+        }).join('')
         : '<div class="empty-inline">Оценок пока не было</div>';
 
     return `
         <div class="subtab-panel">
             <div class="section-title-row">
                 <h4 style="margin:0;">Протокол: ${escapeHtml(currentCaseDetails?.protocol?.name || '—')}</h4>
-                <button class="small-btn" onclick="reassessCase()">Запустить переоценку</button>
+                <div class="button-row">
+                    <button class="small-btn" onclick="reassessCase()">Запустить переоценку</button>
+                    <button class="small-btn ghost" onclick="reassessCase(true)">Переоценить LLM+RAG</button>
+                </div>
             </div>
             <div>${trackingHtml}</div>
             <div class="section-title-row" style="margin-top:16px;"><h4 style="margin:0;">История оценок LLM/графа</h4></div>
@@ -940,7 +964,7 @@ async function createNewCase() {
     renderHospitalDashboard();
 }
 
-async function reassessCase() {
+async function reassessCase(forceLlm = false) {
     if (!currentCaseId) return;
     await runCaseBusyAction('Команда получена, идет переоценка риска...', async () => {
         const result = await apiJson(`/api/cases/${currentCaseId}/reassess`, {
