@@ -2,10 +2,14 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>ACS Triage System</title>
+    <title>Скрининг ОКС - клинические рекомендации Минздрава</title>
     <link rel="stylesheet" href="/static/style.css">
 
      <link rel="icon" href="/static/favicon.ico">
+     <!-- Cytoscape.js - визуализация графа пациента (Track 4) -->
+     <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+     <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+     <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
 </head>
 <body>
 
@@ -39,7 +43,7 @@
         <!-- Панель выбранного пациента (Глобальный контекст) -->
         <div class="active-patient-banner" id="activePatientBanner">
             <span id="activePatientText">Пациент не выбран</span>
-            <button id="unselectBtn" style="display: none;" onclick="unselectPatient()">✕ Сбросить</button>
+            <button id="unselectBtn" style="display: none;" onclick="unselectPatient()">X Сбросить</button>
         </div>
 
         <!-- Навигационная панель-->
@@ -56,28 +60,35 @@
 
             <!-- Оценка ОКС -->
             <div id="main-tab" class="tab-content active">
-                <h3>Оценка риска ОКС</h3>
-                <p class="subtitle">Введите базовые параметры для расчета</p>
-                
+                <h3>Скрининг ОКС - клинические рекомендации Минздрава РФ</h3>
+                <p class="subtitle">Дифференциация: ИМпST / ИМбпST / ОКСпST / ОКСбпST / НС / ОКС маловероятен</p>
+
                 <div class="form-grid">
-                    <input type="text" id="ptName" placeholder="Имя пациента">
+                    <input type="text" id="ptName" placeholder="ФИО пациента">
                     <select id="ptPain">
-                        <option value="typical">Типичная боль</option>
+                        <option value="typical">Типичная ангинозная боль</option>
                         <option value="atypical">Атипичная боль</option>
-                        <option value="none">Нет боли</option>
+                        <option value="none">Боли нет</option>
                     </select>
-                    <input type="text" id="ptEcg" placeholder="ЭКГ (напр. ST-elevation)">
-                    <input type="number" id="ptTrop" placeholder="Тропонин" step="0.1">
-                    <input type="number" id="ptHr" placeholder="ЧСС">
+                    <input type="text" id="ptEcg" placeholder="ЭКГ (напр. подъём ST V2-V5; депрессия ST; новая ЛНПГ)">
+                    <input type="number" id="ptTrop" placeholder="Тропонин, нг/мл" step="0.01">
+                    <input type="number" id="ptHr" placeholder="ЧСС, уд/мин">
                     <input type="text" id="ptBp" placeholder="АД (напр. 120/80)">
                 </div>
-                
-                <button class="action-btn" onclick="runAssessment()">Получить результат</button>
-                
+
+                <button class="action-btn" onclick="runAssessment()">Запустить оценку</button>
+
+                <!-- Диагностическая плашка (Track 1) -->
+                <div id="diagnosisBanner" class="diagnosis-banner" style="display:none;">
+                    <span class="diagnosis-label" id="diagnosisLabel">-</span>
+                    <span class="diagnosis-confidence" id="diagnosisConfidence"></span>
+                    <span class="diagnosis-rationale" id="diagnosisRationale"></span>
+                </div>
+
                 <!-- Блок для вывода результата -->
                 <pre id="resultOutput" class="console-output">Здесь появится результат...</pre>
                 <div id="resultCitationsPanel" class="citations-panel" style="display: none;">
-                    <h4>Источники RAG</h4>
+                    <h4>Источники RAG (клинические рекомендации Минздрава)</h4>
                     <div id="resultCitationsList" class="citations-list"></div>
                 </div>
             </div>
@@ -234,8 +245,55 @@
         </div>
     </div>
 
+    <!-- Модалка 'Граф пациента' (Track 4) -->
+    <div id="patientGraphModal" class="modal graph-modal">
+        <div class="modal-content graph-modal-content">
+            <span class="close-btn" onclick="closePatientGraphModal()">&times;</span>
+            <div class="graph-modal-header">
+                <h3 style="margin:0;">Граф пациента - маршрут по клиническому workflow</h3>
+                <div class="graph-modal-controls">
+                    <label for="graphHistorySelect" style="font-size: 0.85em; color:#475569;">История оценок:</label>
+                    <select id="graphHistorySelect" onchange="onGraphHistoryChange(this.value)"></select>
+                </div>
+            </div>
+            <div id="graphDiagnosisStrip" class="diagnosis-banner diagnosis-banner-inline" style="display:none;"></div>
+            <div class="graph-modal-body">
+                <div id="cyContainer" class="cy-container"></div>
+                <div class="graph-modal-sidebar">
+                    <div class="graph-legend">
+                        <h4 style="margin:0 0 8px 0; color:#1e293b;">Состояние узла (обводка)</h4>
+                        <div><span class="legend-dot legend-current"></span> Текущий узел</div>
+                        <div><span class="legend-dot legend-visited"></span> Пройденный узел</div>
+                        <div><span class="legend-dot legend-pending"></span> Узел вне маршрута</div>
+                        <div><span class="legend-dot legend-fired"></span> Сработавшее правило КР</div>
+                        <div><span class="legend-dot legend-fired-diag"></span> Установленный диагноз</div>
+
+                        <h4 style="margin:14px 0 8px 0; color:#1e293b;">Тип узла (цвет заливки)</h4>
+                        <div><span class="legend-fill" style="background:#0ea5e9;"></span> Ингест / парсинг данных</div>
+                        <div><span class="legend-fill" style="background:#a855f7;"></span> Роутеры (pretriage / diagnostic / management)</div>
+                        <div><span class="legend-fill" style="background:#f97316;"></span> Правила КР (RULEBOOK)</div>
+                        <div><span class="legend-fill" style="background:#ef4444;"></span> Классификация ОКС / диагностические метки</div>
+                        <div><span class="legend-fill" style="background:#22c55e;"></span> Триаж (high / low / uncertain)</div>
+                        <div><span class="legend-fill" style="background:#14b8a6;"></span> RAG / LLM</div>
+                        <div><span class="legend-fill" style="background:#3b82f6;"></span> Управление (monitor / treatment)</div>
+                        <div><span class="legend-fill" style="background:#6366f1;"></span> Клинические протоколы</div>
+                        <div><span class="legend-fill" style="background:#64748b;"></span> Сохранение результата / выход</div>
+                    </div>
+                    <div class="graph-route">
+                        <h4 style="margin:12px 0 8px 0; color:#1e293b;">Маршрут пациента</h4>
+                        <ol id="graphRouteList" class="graph-route-list"></ol>
+                    </div>
+                    <div class="graph-rules">
+                        <h4 style="margin:12px 0 8px 0; color:#1e293b;">Сработавшие правила КР</h4>
+                        <ul id="graphFiredList" class="graph-fired-list"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Подключаем логику кнопок -->
     <script src="/static/script.js"></script>
-    
+
 </body>
 </html>

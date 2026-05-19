@@ -21,7 +21,12 @@ from src.infrastructure.db.models import (  # noqa: F401 - ensure models are reg
 # python -m src.infrastructure.db.init_db
 
 SCHEMA_UPGRADE_SQL = [
-    # "ALTER TABLE case_observations ADD COLUMN IF NOT EXISTS code VARCHAR(48) NOT NULL DEFAULT '';",
+    # Колонки трассы по графу и диагностической метки добавлены в Track 4.
+    # Для существующих PostgreSQL-инсталляций добавляем без удаления данных.
+    "ALTER TABLE case_assessments ADD COLUMN IF NOT EXISTS path_trace_json JSON DEFAULT '{}'::json;",
+    "ALTER TABLE case_assessments ADD COLUMN IF NOT EXISTS acs_diagnosis_json JSON DEFAULT '{}'::json;",
+    "ALTER TABLE triage_cases ADD COLUMN IF NOT EXISTS latest_path_trace_json JSON DEFAULT '{}'::json;",
+    "ALTER TABLE triage_cases ADD COLUMN IF NOT EXISTS latest_acs_diagnosis JSON DEFAULT '{}'::json;",
 ]
 
 

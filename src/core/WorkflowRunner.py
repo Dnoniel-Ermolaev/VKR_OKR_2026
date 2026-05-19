@@ -239,7 +239,7 @@ class workflow_runner:
             medications = repository.get_case_medications(case_id)
             diagnoses = repository.get_case_diagnoses(case_id)
         except Exception:
-            # PostgreSQL: после ошибки SQL сессия «отравлена» — без rollback следующий INSERT даст InFailedSqlTransaction.
+            # PostgreSQL: после ошибки SQL сессия 'отравлена' - без rollback следующий INSERT даст InFailedSqlTransaction.
             sess = getattr(repository, "session", None)
             if sess is not None:
                 try:
@@ -277,4 +277,8 @@ class workflow_runner:
             "next_step": result.get("next_step"),
             "triage_category": result.get("triage_category"),
             "route_reason": result.get("route_reason"),
+            "acs_diagnosis": result.get("acs_diagnosis"),
+            "rule_fires": result.get("rule_fires", []),
+            "rule_reasons": result.get("rule_reasons", []),
+            "node_trace": result.get("node_trace", []),
         }

@@ -45,7 +45,7 @@ SHEETS: Dict[str, SheetSchema] = {
             "2026-03-27T08:00", 135, 85, 88, 18, 36.7, 97, 150, 120, 6.2, "приём",
         ],
         description=(
-            "Лист витальных показателей — каждая строка это одно измерение "
+            "Лист витальных показателей - каждая строка это одно измерение "
             "с временной меткой. Значения вне нормы будут помечены автоматически."
         ),
     ),
@@ -54,7 +54,7 @@ SHEETS: Dict[str, SheetSchema] = {
         headers=["recorded_at", "code", "name", "value", "unit", "note"],
         example=["2026-03-27T08:30", "troponin_i", "Тропонин I", 0.02, "нг/мл", ""],
         description=(
-            "Лист анализов. Заполните `code` из справочника; если неизвестен — "
+            "Лист анализов. Заполните `code` из справочника; если неизвестен - "
             "укажите `name` (например, `Тропонин I`), система попытается найти совпадение."
         ),
     ),
@@ -414,7 +414,7 @@ class ExcelImportService:
         if isinstance(value, date):
             return datetime.combine(value, time.min)
         if isinstance(value, (int, float)):
-            # Excel serial date — best effort
+            # Excel serial date - best effort
             try:
                 from datetime import timedelta
                 base = datetime(1899, 12, 30)

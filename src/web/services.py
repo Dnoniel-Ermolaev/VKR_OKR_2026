@@ -22,7 +22,10 @@ from src.medical.catalog import (
     flag_for_lab,
     flag_for_vital,
 )
-from src.medical.protocols import protocol_summary
+from src.medical.diagnosis import AcsDiagnosis
+from src.medical.protocols import PROTOCOLS, protocol_summary
+from src.medical.rules import RULEBOOK
+from src.medical.terminology import diagnosis_color, diagnosis_label
 
 
 class PatientService:
@@ -131,7 +134,7 @@ class PatientService:
             patient = self.db_session.query(Patient).filter(Patient.id == patient_id).first()
             if not patient:
                 return {"error": "Пациент не найден"}
-            # Явный порядок: кейсы (со всеми дочерними сущностями по cascade ORM) → визиты → пациент.
+            # Явный порядок: кейсы (со всеми дочерними сущностями по cascade ORM) -> визиты -> пациент.
             cases = self.db_session.query(TriageCase).filter(TriageCase.patient_id == patient_id).all()
             for case in cases:
                 self.db_session.delete(case)
@@ -212,6 +215,7 @@ def _serialize_case(case) -> Dict[str, Any]:
         "latest_triage_category": case.latest_triage_category,
         "latest_explanation": case.latest_explanation,
         "latest_payload": case.latest_payload,
+        "latest_acs_diagnosis": getattr(case, "latest_acs_diagnosis", None) or {},
         "created_at": case.created_at.isoformat() if case.created_at else None,
         "updated_at": case.updated_at.isoformat() if case.updated_at else None,
         "closed_at": case.closed_at.isoformat() if case.closed_at else None,
@@ -320,9 +324,12 @@ class CaseService:
                     "missing_fields": item.missing_fields_json,
                     "llm_used": item.llm_used,
                     "created_at": item.created_at.isoformat(),
+                    "acs_diagnosis": getattr(item, "acs_diagnosis_json", None) or {},
+                    "has_trace": bool(getattr(item, "path_trace_json", None)),
                 }
                 for item in assessments
             ],
+            "latest_acs_diagnosis": getattr(case, "latest_acs_diagnosis", None) or {},
             "reports": [
                 {
                     "id": report.id,
@@ -888,8 +895,222 @@ def _to_float(value) -> float | None:
         return None
 
 
+# ---------------------------------------------------------------------------
+# Сервис 'Граф пациента' (Track 4 - визуализация маршрута по графу LangGraph)
+# ---------------------------------------------------------------------------
+
+# Категория узла -> CSS-класс / цвет для Cytoscape.
+NODE_CATEGORY_COLORS = {
+    "ingestion": "#0ea5e9",
+    "router": "#a855f7",
+    "rule": "#f97316",
+    "diagnosis": "#ef4444",
+    "triage": "#22c55e",
+    "knowledge": "#14b8a6",
+    "management": "#3b82f6",
+    "output": "#64748b",
+    "protocol": "#6366f1",
+}
+
+
+def _node(node_id: str, label: str, category: str, **extra: Any) -> Dict[str, Any]:
+    """Сформировать описание одной вершины канонического графа."""
+    return {
+        "id": node_id,
+        "label": label,
+        "category": category,
+        "color": NODE_CATEGORY_COLORS.get(category, "#94a3b8"),
+        **extra,
+    }
+
+
+def _edge(source: str, target: str, label: str = "", kind: str = "flow") -> Dict[str, Any]:
+    edge_id = f"{source}__{target}__{kind}"
+    return {"id": edge_id, "source": source, "target": target, "label": label, "kind": kind}
+
+
+def build_canonical_graph() -> Dict[str, Any]:
+    """Собрать каноническое описание графа пациента для фронтенда.
+
+    Объединяет:
+
+    - узлы LangGraph (parse_input, router_pretriage, rule_check, classify_acs,
+      router_diagnostic, high_risk_fast_track, low_risk_observation,
+      diagnostic_uncertain, rag_retrieval, llm_assess, router_management,
+      monitor_plan, recommend_treatment, output_save);
+    - категории правил из RULEBOOK (свернуты в один кластер 'Правила КР');
+    - диагностические метки ОКС (ИМпST, ИМбпST, ОКСпST, ОКСбпST, НС, ОКС маловероятен);
+    - клинические протоколы (ИМпST / ИМбпST / НС / generic).
+    """
+    nodes: List[Dict[str, Any]] = [
+        # ---- пайплайн анализа ----
+        _node("llm_parse_history", "LLM-парсинг анамнеза", "ingestion"),
+        _node("parse_input", "parse_input - нормализация payload", "ingestion"),
+        _node("router_pretriage", "router_pretriage - достаточно ли данных?", "router"),
+        _node("clarify_data", "clarify_data - запрос уточнений", "ingestion"),
+        _node("data_quality_issue", "data_quality_issue", "output"),
+        _node("rule_check", "rule_check - RULEBOOK (КР Минздрав)", "rule"),
+        _node("classify_acs", "classify_acs - диагностическая метка", "diagnosis"),
+        _node("router_diagnostic", "router_diagnostic", "router"),
+        _node("high_risk_fast_track", "high_risk_fast_track (ИМпST/ИМбпST)", "triage"),
+        _node("diagnostic_uncertain", "diagnostic_uncertain (неопределённо)", "triage"),
+        _node("low_risk_observation", "low_risk_observation (НС / ОКС маловероятен)", "triage"),
+        _node("rag_retrieval", "rag_retrieval - поиск по КР", "knowledge"),
+        _node("llm_assess", "llm_assess - корректировка риска", "knowledge"),
+        _node("router_management", "router_management", "router"),
+        _node("monitor_plan", "monitor_plan - план наблюдения", "management"),
+        _node("recommend_treatment", "recommend_treatment - план терапии", "management"),
+        _node("output_save", "output_save - фиксация результата", "output"),
+    ]
+    edges: List[Dict[str, Any]] = [
+        _edge("llm_parse_history", "parse_input"),
+        _edge("parse_input", "router_pretriage"),
+        _edge("router_pretriage", "rule_check", "достаточно данных"),
+        _edge("router_pretriage", "clarify_data", "нужно уточнить"),
+        _edge("clarify_data", "llm_parse_history", "retry_parse"),
+        _edge("clarify_data", "data_quality_issue", "не получилось"),
+        _edge("data_quality_issue", "output_save"),
+        _edge("rule_check", "classify_acs"),
+        _edge("classify_acs", "router_diagnostic"),
+        _edge("router_diagnostic", "high_risk_fast_track", "urgent"),
+        _edge("router_diagnostic", "diagnostic_uncertain", "rag_llm"),
+        _edge("router_diagnostic", "low_risk_observation", "rule_only"),
+        _edge("diagnostic_uncertain", "rag_retrieval"),
+        _edge("rag_retrieval", "llm_assess"),
+        _edge("llm_assess", "router_management"),
+        _edge("high_risk_fast_track", "router_management"),
+        _edge("low_risk_observation", "router_management"),
+        _edge("router_management", "monitor_plan", "monitor"),
+        _edge("router_management", "recommend_treatment", "recommend_treatment"),
+        _edge("router_management", "output_save", "finalize"),
+        _edge("monitor_plan", "output_save"),
+        _edge("recommend_treatment", "output_save"),
+    ]
+
+    # ---- кластер правил RULEBOOK: одна вершина-агрегатор + по одной на категорию ----
+    rule_categories = sorted({rule.category for rule in RULEBOOK})
+    nodes.append(
+        _node(
+            "rulebook_root",
+            f"RULEBOOK ({len(RULEBOOK)} правил)",
+            "rule",
+            description="Свод типизированных правил клинических рекомендаций Минздрава.",
+        )
+    )
+    edges.append(_edge("rule_check", "rulebook_root", "uses", kind="reference"))
+    for category in rule_categories:
+        cat_id = f"rules_cat_{category}"
+        nodes.append(
+            _node(
+                cat_id,
+                {
+                    "ecg": "ЭКГ-критерии",
+                    "biomarker": "Биомаркеры (тропонин)",
+                    "clinical": "Клиника / симптомы",
+                    "hemodynamic": "Гемодинамика",
+                    "score": "Скоры / демография",
+                    "time": "Тайминг (окно реперфузии)",
+                }.get(category, category),
+                "rule",
+                description=f"Категория правил: {category}",
+                rule_count=sum(1 for r in RULEBOOK if r.category == category),
+                rule_ids=[r.id for r in RULEBOOK if r.category == category],
+            )
+        )
+        edges.append(_edge("rulebook_root", cat_id, kind="reference"))
+
+    # ---- диагностические метки ----
+    for diag in AcsDiagnosis:
+        diag_id = f"diag_{diag.value}"
+        nodes.append(
+            _node(
+                diag_id,
+                diagnosis_label(diag.value),
+                "diagnosis",
+                color=diagnosis_color(diag.value),
+                diagnosis_code=diag.value,
+            )
+        )
+        edges.append(_edge("classify_acs", diag_id, kind="produces"))
+
+    # ---- протоколы ведения ----
+    for protocol in PROTOCOLS.values():
+        proto_id = f"protocol_{protocol.code}"
+        nodes.append(
+            _node(
+                proto_id,
+                protocol.name,
+                "protocol",
+                description=protocol.description,
+                protocol_code=protocol.code,
+            )
+        )
+
+    return {"nodes": nodes, "edges": edges, "categories": list(NODE_CATEGORY_COLORS.keys())}
+
+
+class GraphTraceService:
+    """Сервис, отдающий канонический граф и трассу пациента для UI-модалки."""
+
+    def __init__(self, db_session: Session):
+        self.repo = sql_database_repository(db_session)
+
+    def get(self, case_id: str, assessment_id: int | None = None) -> dict:
+        """Вернуть граф + актуальную/историческую трассу + список ассессментов."""
+        case = self.repo.get_case(case_id)
+        if case is None:
+            return {"error": "Кейс не найден"}
+
+        assessments = self.repo.get_case_assessments(case_id)
+        history = [
+            {
+                "id": item.id,
+                "run_kind": item.run_kind,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+                "risk_level": item.risk_level,
+                "triage_category": item.triage_category,
+                "next_step": item.next_step,
+                "acs_diagnosis": getattr(item, "acs_diagnosis_json", None) or {},
+                "has_trace": bool(getattr(item, "path_trace_json", None)),
+            }
+            for item in assessments
+        ]
+
+        # Выбираем трассу: либо явно указанный ассессмент, либо последняя
+        # сохранённая трасса в TriageCase.latest_path_trace_json.
+        selected = None
+        if assessment_id is not None:
+            selected = next((a for a in assessments if a.id == assessment_id), None)
+
+        latest_trace: Dict[str, Any]
+        if selected is not None:
+            latest_trace = dict(getattr(selected, "path_trace_json", {}) or {})
+            latest_diagnosis = getattr(selected, "acs_diagnosis_json", {}) or {}
+        else:
+            latest_trace = dict(getattr(case, "latest_path_trace_json", {}) or {})
+            latest_diagnosis = getattr(case, "latest_acs_diagnosis", {}) or {}
+
+        if not latest_trace and assessments:
+            # Фолбэк: если latest_path_trace_json пустой (например, ассессмент
+            # сохранён до апгрейда), берём из последней оценки.
+            last = assessments[-1]
+            latest_trace = dict(getattr(last, "path_trace_json", {}) or {})
+            if not latest_diagnosis:
+                latest_diagnosis = getattr(last, "acs_diagnosis_json", {}) or {}
+
+        return {
+            "case": _serialize_case(case),
+            "canonical_graph": build_canonical_graph(),
+            "latest_trace": latest_trace,
+            "latest_diagnosis": latest_diagnosis,
+            "history": history,
+            "selected_assessment_id": selected.id if selected is not None else None,
+        }
+
+
 __all__ = [
     "PatientService", "TriageService", "CaseService", "CatalogService",
     "ObservationService", "StudyService", "ProcedureService",
     "MedicationService", "DiagnosisService", "ReassessService",
+    "GraphTraceService", "build_canonical_graph",
 ]

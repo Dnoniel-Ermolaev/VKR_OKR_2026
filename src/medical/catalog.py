@@ -105,7 +105,7 @@ VITALS: List[VitalDef] = [
     VitalDef("dbp", "АД диастолическое", "мм рт.ст.", "pressure", 60, 90, 50, 120),
     VitalDef("hr", "ЧСС", "уд/мин", "rate", 50, 100, 40, 140),
     VitalDef("rr", "ЧД", "в мин", "rate", 12, 20, 8, 30),
-    VitalDef("temp", "Температура", "°C", "temperature", 36.0, 37.2, 35.0, 39.0),
+    VitalDef("temp", "Температура", "C", "temperature", 36.0, 37.2, 35.0, 39.0),
     VitalDef("spo2", "SpO2", "%", "saturation", 95, 100, 90, 100),
     VitalDef("diuresis_in", "Диурез внутрь", "мл", "fluid"),
     VitalDef("diuresis_out", "Диурез в/в", "мл", "fluid"),

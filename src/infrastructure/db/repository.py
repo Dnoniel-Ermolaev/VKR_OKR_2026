@@ -246,6 +246,8 @@ class sql_database_repository:
         result: Dict[str, Any],
     ) -> CaseAssessment:
         """ Сохранение оценки риска клинического случая """
+        path_trace = _build_path_trace_payload(result)
+        acs_diagnosis = result.get("acs_diagnosis") or {}
         assessment = CaseAssessment(
             case_id=case_id,
             run_kind=run_kind,
@@ -258,6 +260,8 @@ class sql_database_repository:
             explanation=str(result.get("explanation", "")),
             citations_json=list(result.get("citations", [])),
             missing_fields_json=list(result.get("missing_fields", [])),
+            acs_diagnosis_json=dict(acs_diagnosis) if isinstance(acs_diagnosis, dict) else {},
+            path_trace_json=path_trace,
             llm_used=bool(result.get("llm_used", False)),
         )
         self.session.add(assessment)
@@ -286,6 +290,10 @@ class sql_database_repository:
         case.latest_explanation = str(result.get("explanation", ""))
         case.latest_citations = list(result.get("citations", []))
         case.missing_fields_json = list(result.get("missing_fields", []))
+        acs_diagnosis = result.get("acs_diagnosis") or {}
+        if isinstance(acs_diagnosis, dict):
+            case.latest_acs_diagnosis = dict(acs_diagnosis)
+        case.latest_path_trace_json = _build_path_trace_payload(result)
         case.status = status
         case.current_stage = current_stage
         case.updated_at = datetime.now(timezone.utc)
@@ -618,3 +626,21 @@ class sql_database_repository:
             except ValueError:
                 return None
         return None
+
+
+def _build_path_trace_payload(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Сформировать JSON-объект трассы пациента по графу для персистентного хранения."""
+    node_trace = result.get("node_trace") or []
+    rule_fires = result.get("rule_fires") or []
+    rule_reasons = result.get("rule_reasons") or []
+    visited_nodes = [entry.get("node") for entry in node_trace if isinstance(entry, dict)]
+    return {
+        "visited_nodes": visited_nodes,
+        "node_trace": node_trace,
+        "rule_fires": rule_fires,
+        "rule_reasons": rule_reasons,
+        "next_step": result.get("next_step"),
+        "triage_category": result.get("triage_category"),
+        "risk_level": result.get("risk_level"),
+        "current_node": visited_nodes[-1] if visited_nodes else None,
+    }

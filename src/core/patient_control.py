@@ -46,7 +46,7 @@ def _ensure_dt(value: Any) -> Optional[datetime]:
 
 
 def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
-    """PostgreSQL TIMESTAMP WITHOUT TIME ZONE даёт naive datetime — приводим к UTC для сравнений."""
+    """PostgreSQL TIMESTAMP WITHOUT TIME ZONE даёт naive datetime - приводим к UTC для сравнений."""
     if dt is None:
         return None
     if dt.tzinfo is None:
@@ -63,9 +63,15 @@ def select_case_protocol(
     diagnoses: Iterable[Any] | None,
     ecg_description: str = "",
     triage_category: str = "",
+    acs_diagnosis: Any | None = None,
 ) -> Protocol:
     icd_codes = [str(_field(d, "icd10", "")).upper() for d in (diagnoses or [])]
-    return select_protocol(icd_codes, ecg_description=ecg_description, triage_category=triage_category)
+    return select_protocol(
+        icd_codes,
+        ecg_description=ecg_description,
+        triage_category=triage_category,
+        acs_diagnosis=acs_diagnosis,
+    )
 
 
 def _requirement_kind_title(kind: str) -> str:
@@ -205,7 +211,7 @@ def derive_tracking(
         else:
             status = "pending"
 
-        # Overdue logic — по окну от поступления.
+        # Overdue logic - по окну от поступления.
         if status != "done" and req.window_hours is not None and started is not None:
             deadline = started + _hours(req.window_hours)
             if now > deadline:
@@ -268,7 +274,7 @@ def build_alerts(
             if med_class:
                 active_classes.add(med_class)
     if protocol.code in {"acs_stemi", "acs_nstemi"} and "antiplatelet" not in active_classes:
-        alerts.append("Не назначен антиагрегант при ОКС — угроза тромботических осложнений.")
+        alerts.append("Не назначен антиагрегант при ОКС - угроза тромботических осложнений.")
     if protocol.code == "acs_stemi" and "anticoag" not in active_classes:
         alerts.append("Не назначен антикоагулянт при STEMI.")
 
@@ -311,7 +317,7 @@ def build_alerts(
                 for p in (procedures or [])
             )
             if spo2_val < 90 and not oxygen_active:
-                alerts.append(f"SpO2 {spo2_val}% < 90% — рассмотреть оксигенотерапию.")
+                alerts.append(f"SpO2 {spo2_val}% < 90% - рассмотреть оксигенотерапию.")
         except (TypeError, ValueError):
             pass
 
@@ -364,11 +370,24 @@ def build_case_control(
 ) -> Tuple[Protocol, List[Dict[str, Any]], Dict[str, Any]]:
     ecg_text = ""
     triage = ""
+    acs_diagnosis_value: Any | None = None
     if case_payload:
         ecg_text = str(case_payload.get("ecg_changes", ""))
     if latest_result:
         triage = str(latest_result.get("triage_category", ""))
-    protocol = select_case_protocol(diagnoses, ecg_description=ecg_text, triage_category=triage)
+        # acs_diagnosis может приходить как dict ({"label": "im_pst", ...})
+        # или как строка-код.
+        raw_diag = latest_result.get("acs_diagnosis")
+        if isinstance(raw_diag, dict):
+            acs_diagnosis_value = raw_diag.get("label")
+        elif raw_diag:
+            acs_diagnosis_value = raw_diag
+    protocol = select_case_protocol(
+        diagnoses,
+        ecg_description=ecg_text,
+        triage_category=triage,
+        acs_diagnosis=acs_diagnosis_value,
+    )
     tracking = derive_tracking(
         protocol=protocol,
         observations=observations,

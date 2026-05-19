@@ -11,6 +11,28 @@ let excelImportReport = null;
 let caseBusy = false;
 let caseBusyMessage = '';
 
+// --- Track 1: метки диагнозов по КР Минздрава ---
+const DIAGNOSIS_LABELS = {
+    im_pst:      'ИМпST (инфаркт миокарда с подъёмом ST)',
+    im_bpst:     'ИМбпST (инфаркт миокарда без подъёма ST)',
+    oks_pst:     'ОКСпST (подозрение на ОКС с подъёмом ST)',
+    oks_bpst:    'ОКСбпST (подозрение на ОКС без подъёма ST)',
+    ns:          'НС (нестабильная стенокардия)',
+    oks_unlikely:'ОКС маловероятен',
+};
+const DIAGNOSIS_COLORS = {
+    im_pst:      '#dc2626',
+    im_bpst:     '#ea580c',
+    oks_pst:     '#f97316',
+    oks_bpst:    '#f59e0b',
+    ns:          '#3b82f6',
+    oks_unlikely:'#94a3b8',
+};
+
+// --- Track 4: состояние модалки 'Граф пациента' ---
+let graphTraceData = null;
+let graphCyInstance = null;
+
 const CASE_SUBTABS = [
     { id: 'vitals',       label: 'Витальные' },
     { id: 'labs',         label: 'Анализы' },
@@ -215,22 +237,53 @@ function syncAssessmentFormFromCase(casePayload) {
 async function runAssessment() {
     const outputBox = document.getElementById('resultOutput');
     renderAssessmentCitations([]);
+    renderDiagnosisBanner(null, document.getElementById('diagnosisBanner'));
     outputBox.innerText = "Загрузка...";
 
-    // Собираем те же данные, которые затем можно сохранить как case.
     const payload = getAssessmentFormPayload();
 
-    // Отправляем JSON на наш Python сервер (FastAPI)
     const response = await fetch('/api/assess', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
 
-    // Печатаем ответ
     const result = await response.json();
     renderAssessmentCitations(result.citations || []);
+    renderDiagnosisBanner(result.acs_diagnosis, document.getElementById('diagnosisBanner'));
     outputBox.innerText = JSON.stringify(result, null, 2);
+}
+
+function renderDiagnosisBanner(diagnosis, container) {
+    if (!container) return;
+    if (!diagnosis || !diagnosis.label) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+    const label = DIAGNOSIS_LABELS[diagnosis.label] || diagnosis.label;
+    const color = DIAGNOSIS_COLORS[diagnosis.label] || '#94a3b8';
+    const confidence = Number.isFinite(diagnosis.confidence)
+        ? `достоверность ${(diagnosis.confidence * 100).toFixed(0)}%`
+        : '';
+    const rationale = diagnosis.rationale || '';
+    const criteria = Array.isArray(diagnosis.criteria_fired) && diagnosis.criteria_fired.length
+        ? `<ul class="diagnosis-criteria">${diagnosis.criteria_fired.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>`
+        : '';
+    const icd = Array.isArray(diagnosis.icd10_suggested) && diagnosis.icd10_suggested.length
+        ? `<div class="diagnosis-icd">МКБ-10: ${diagnosis.icd10_suggested.map(escapeHtml).join(', ')}</div>`
+        : '';
+    container.style.display = 'block';
+    container.style.borderLeftColor = color;
+    container.innerHTML = `
+        <div class="diagnosis-headline">
+            <span class="diagnosis-chip" style="background:${color};">${escapeHtml(label)}</span>
+            ${confidence ? `<span class="diagnosis-confidence">${escapeHtml(confidence)}</span>` : ''}
+        </div>
+        ${rationale ? `<div class="diagnosis-rationale">${escapeHtml(rationale)}</div>` : ''}
+        ${criteria}
+        ${icd}
+    `;
 }
 
 // Отправка команды из Консоли
@@ -379,8 +432,8 @@ function renderVisitsPanel() {
     const visitsHtml = visits.length
         ? [...visits].reverse().map(v => `
             <div class="list-row">
-                <span><b>📅 ${escapeHtml(v.date)}</b></span>
-                <button onclick="deleteVisit(${v.id})" class="icon-btn" title="Удалить визит">🗑️</button>
+                <span><b> ${escapeHtml(v.date)}</b></span>
+                <button onclick="deleteVisit(${v.id})" class="icon-btn" title="Удалить визит">X</button>
             </div>
         `).join('')
         : "<p class='empty-inline'>Визитов пока нет</p>";
@@ -413,7 +466,7 @@ function renderVisitContextPanel() {
         </div>
         <div class="empty-inline">
             Раздел оставлен для будущей логики единичных визитов. Постоянное наблюдение, анализы,
-            исследования, переоценка и эпикриз перенесены во вкладку «Стационар».
+            исследования, переоценка и эпикриз перенесены во вкладку 'Стационар'.
         </div>
     `;
 }
@@ -457,7 +510,7 @@ function renderCasesListPanel() {
                         <span>${escapeHtml(item.latest_risk_level || '')}</span>
                     </div>
                     <div class="muted-line">Создан: ${escapeHtml(formatDt(item.created_at))}</div>
-                    <div class="muted-line">Этап: ${escapeHtml(item.current_stage || '—')}</div>
+                    <div class="muted-line">Этап: ${escapeHtml(item.current_stage || '-')}</div>
                 </div>
             `;
         }).join('')
@@ -476,7 +529,7 @@ function caseStatusLabel(status) {
     if (status === 'active') return 'Открыт';
     if (status === 'awaiting_labs') return 'Ожидает анализы';
     if (status === 'completed') return 'Закрыт';
-    return status || '—';
+    return status || '-';
 }
 
 function caseStatusClass(status) {
@@ -490,7 +543,7 @@ function renderCasePanel() {
     if (!currentCaseDetails || !currentCaseDetails.case) {
         return `
             <div class="empty-state">
-                Выберите существующий кейс слева или создайте новый кнопкой «+ Новый кейс».
+                Выберите существующий кейс слева или создайте новый кнопкой '+ Новый кейс'.
             </div>
         `;
     }
@@ -505,9 +558,11 @@ function renderCasePanel() {
 
     const closed = info.status === 'completed';
     const disabledAttr = caseBusy ? 'disabled' : '';
+    const graphBtn = `<button class="small-btn" onclick="openPatientGraphModal()" ${disabledAttr}>Граф пациента</button>`;
     const lifecycleButtons = closed
-        ? `<button class="small-btn" onclick="reopenCase()" ${disabledAttr}>Переоткрыть</button>`
-        : `<button class="small-btn" onclick="reassessCase()" ${disabledAttr}>Переоценить</button>
+        ? `${graphBtn}<button class="small-btn" onclick="reopenCase()" ${disabledAttr}>Переоткрыть</button>`
+        : `${graphBtn}
+           <button class="small-btn" onclick="reassessCase()" ${disabledAttr}>Переоценить</button>
            <button class="small-btn" onclick="generateCaseReport()" ${disabledAttr}>Эпикриз</button>
            <button class="small-btn" onclick="closeCase()" ${disabledAttr}>Закрыть</button>`;
     const busyHtml = caseBusy
@@ -522,7 +577,7 @@ function renderCasePanel() {
             <div class="case-banner-top">
                 <div>
                     <div class="case-banner-title">${escapeHtml(info.title || info.id)}</div>
-                    <div class="muted-line">ID ${escapeHtml(info.id)} | Статус: <b>${escapeHtml(info.status || '—')}</b> | Этап: ${escapeHtml(info.current_stage || '—')}</div>
+                    <div class="muted-line">ID ${escapeHtml(info.id)} | Статус: <b>${escapeHtml(info.status || '-')}</b> | Этап: ${escapeHtml(info.current_stage || '-')}</div>
                 </div>
                 <div class="case-action-row">
                     <div class="button-row">
@@ -533,9 +588,13 @@ function renderCasePanel() {
             </div>
             ${busyHtml}
             <div class="case-banner-bottom">
-                <div class="metric-card"><span class="metric-label">Риск</span><span class="metric-value">${escapeHtml(info.latest_risk_level || '—')}</span></div>
-                <div class="metric-card"><span class="metric-label">Категория</span><span class="metric-value">${escapeHtml(info.latest_triage_category || '—')}</span></div>
-                <div class="metric-card"><span class="metric-label">Протокол</span><span class="metric-value">${escapeHtml(protocol?.name || '—')}</span></div>
+                <div class="metric-card"><span class="metric-label">Риск</span><span class="metric-value">${escapeHtml(info.latest_risk_level || '-')}</span></div>
+                <div class="metric-card"><span class="metric-label">Категория</span><span class="metric-value">${escapeHtml(info.latest_triage_category || '-')}</span></div>
+                <div class="metric-card">
+                    <span class="metric-label">Диагностическая метка</span>
+                    <span class="metric-value">${renderDiagnosisChip(currentCaseDetails?.latest_acs_diagnosis || info.latest_acs_diagnosis)}</span>
+                </div>
+                <div class="metric-card"><span class="metric-label">Протокол</span><span class="metric-value">${escapeHtml(protocol?.name || '-')}</span></div>
                 <div class="metric-card"><span class="metric-label">Готовность</span>
                     <span class="metric-value">${completion}%</span>
                 </div>
@@ -599,7 +658,7 @@ function renderVitalsSubTab() {
                 <td><b>${escapeHtml(o.name)}</b><div class="muted-line">${escapeHtml(o.code)}</div></td>
                 <td class="flag-${o.flag || 'unknown'}">${escapeHtml(fmtNum(o.value_num))} ${escapeHtml(o.unit || '')}</td>
                 <td>${escapeHtml(rangeText(o.ref_low, o.ref_high))}</td>
-                <td><button class="icon-btn" onclick="deleteObservation(${o.id}, 'vital')" title="Удалить">🗑️</button></td>
+                <td><button class="icon-btn" onclick="deleteObservation(${o.id}, 'vital')" title="Удалить">X</button></td>
             </tr>
         `).join('')
         : `<tr><td colspan="5" class="empty-inline">Витальные показатели пока не введены</td></tr>`;
@@ -624,10 +683,10 @@ function renderLabsSubTab() {
             <tr>
                 <td>${escapeHtml(formatDt(o.recorded_at))}</td>
                 <td><b>${escapeHtml(o.name)}</b><div class="muted-line">${escapeHtml(o.code)}</div></td>
-                <td class="flag-${o.flag || 'unknown'}">${escapeHtml(fmtNum(o.value_num) || o.value_text || '—')} ${escapeHtml(o.unit || '')}</td>
+                <td class="flag-${o.flag || 'unknown'}">${escapeHtml(fmtNum(o.value_num) || o.value_text || '-')} ${escapeHtml(o.unit || '')}</td>
                 <td>${escapeHtml(rangeText(o.ref_low, o.ref_high))}</td>
                 <td>${escapeHtml(flagLabel(o.flag))}</td>
-                <td><button class="icon-btn" onclick="deleteObservation(${o.id}, 'lab')" title="Удалить">🗑️</button></td>
+                <td><button class="icon-btn" onclick="deleteObservation(${o.id}, 'lab')" title="Удалить">X</button></td>
             </tr>
         `).join('')
         : `<tr><td colspan="6" class="empty-inline">Анализы пока не внесены</td></tr>`;
@@ -653,8 +712,8 @@ function renderStudiesSubTab() {
                 <td>${escapeHtml(formatDt(s.started_at))}</td>
                 <td><b>${escapeHtml(s.name)}</b><div class="muted-line">${escapeHtml(s.code)}</div></td>
                 <td><span class="pill pill-${statusClass(s.status)}">${escapeHtml(s.status)}</span></td>
-                <td>${escapeHtml(s.result_text || '—')}</td>
-                <td><button class="icon-btn" onclick="deleteEntity('study', ${s.id})" title="Удалить">🗑️</button></td>
+                <td>${escapeHtml(s.result_text || '-')}</td>
+                <td><button class="icon-btn" onclick="deleteEntity('study', ${s.id})" title="Удалить">X</button></td>
             </tr>
         `).join('')
         : `<tr><td colspan="5" class="empty-inline">Исследований пока нет</td></tr>`;
@@ -680,8 +739,8 @@ function renderProceduresSubTab() {
                 <td>${escapeHtml(formatDt(p.started_at))}</td>
                 <td><b>${escapeHtml(p.name)}</b><div class="muted-line">${escapeHtml(p.code)}</div></td>
                 <td><span class="pill pill-${statusClass(p.status)}">${escapeHtml(p.status)}</span></td>
-                <td>${escapeHtml(p.operator || '—')}</td>
-                <td><button class="icon-btn" onclick="deleteEntity('procedure', ${p.id})" title="Удалить">🗑️</button></td>
+                <td>${escapeHtml(p.operator || '-')}</td>
+                <td><button class="icon-btn" onclick="deleteEntity('procedure', ${p.id})" title="Удалить">X</button></td>
             </tr>
         `).join('')
         : `<tr><td colspan="5" class="empty-inline">Процедур пока нет</td></tr>`;
@@ -705,12 +764,12 @@ function renderMedicationsSubTab() {
         ? items.map(m => `
             <tr>
                 <td><b>${escapeHtml(m.name)}</b><div class="muted-line">${escapeHtml(m.code || '')}</div></td>
-                <td>${escapeHtml(m.med_class || '—')}</td>
+                <td>${escapeHtml(m.med_class || '-')}</td>
                 <td>${escapeHtml(m.dose || '')} ${escapeHtml(m.unit || '')}</td>
                 <td>${escapeHtml(m.route || '')}</td>
                 <td>${escapeHtml(m.frequency || '')}</td>
                 <td><span class="pill pill-${statusClass(m.status)}">${escapeHtml(m.status)}</span></td>
-                <td><button class="icon-btn" onclick="deleteEntity('medication', ${m.id})" title="Удалить">🗑️</button></td>
+                <td><button class="icon-btn" onclick="deleteEntity('medication', ${m.id})" title="Удалить">X</button></td>
             </tr>
         `).join('')
         : `<tr><td colspan="7" class="empty-inline">Назначений пока нет</td></tr>`;
@@ -737,7 +796,7 @@ function renderDiagnosesSubTab() {
                 <td>${escapeHtml(d.name)}</td>
                 <td>${escapeHtml(d.diagnosis_type || '')}</td>
                 <td>${escapeHtml(formatDt(d.established_at))}</td>
-                <td><button class="icon-btn" onclick="deleteEntity('diagnosis', ${d.id})" title="Удалить">🗑️</button></td>
+                <td><button class="icon-btn" onclick="deleteEntity('diagnosis', ${d.id})" title="Удалить">X</button></td>
             </tr>
         `).join('')
         : `<tr><td colspan="5" class="empty-inline">Диагнозов пока нет</td></tr>`;
@@ -765,7 +824,7 @@ function renderAssessmentsSubTab() {
                     <span><b>${escapeHtml(t.title)}</b></span>
                     <span>${escapeHtml(t.status)} (${t.done_count}/${t.needed_count})</span>
                 </div>
-                <div class="muted-line">${escapeHtml(t.kind)} · ${escapeHtml(t.code)} ${t.window_hours ? '· окно ' + t.window_hours + 'ч' : ''}</div>
+                <div class="muted-line">${escapeHtml(t.kind)} - ${escapeHtml(t.code)} ${t.window_hours ? '- окно ' + t.window_hours + 'ч' : ''}</div>
                 ${t.note ? `<div class="tracking-result">${escapeHtml(t.note)}</div>` : ''}
             </div>
         `).join('')
@@ -785,9 +844,10 @@ function renderAssessmentsSubTab() {
             return `
             <div class="assessment-card">
                 <div class="list-row">
-                    <span><b>${escapeHtml(a.run_kind)}</b> · ${escapeHtml(a.risk_level || '')} · ${escapeHtml(a.triage_category || '')}</span>
+                    <span><b>${escapeHtml(a.run_kind)}</b> - ${escapeHtml(a.risk_level || '')} - ${escapeHtml(a.triage_category || '')}</span>
                     <span>${escapeHtml(formatDt(a.created_at))}</span>
                 </div>
+                <div style="margin:4px 0 8px;">${renderDiagnosisChip(a.acs_diagnosis)}</div>
                 <div class="button-row" style="margin:6px 0 8px;">
                     ${llmBadge}
                     ${ragBadge}
@@ -805,14 +865,14 @@ function renderAssessmentsSubTab() {
     return `
         <div class="subtab-panel">
             <div class="section-title-row">
-                <h4 style="margin:0;">Протокол: ${escapeHtml(currentCaseDetails?.protocol?.name || '—')}</h4>
+                <h4 style="margin:0;">Протокол: ${escapeHtml(currentCaseDetails?.protocol?.name || '-')}</h4>
                 <div class="button-row">
                     <button class="small-btn" onclick="reassessCase()">Запустить переоценку</button>
-                    <button class="small-btn ghost" onclick="reassessCase(true)">Переоценить LLM+RAG</button>
+                    <button class="small-btn ghost" onclick="reassessCase(true)">Переоценить с LLM+RAG (КР Минздрав)</button>
                 </div>
             </div>
             <div>${trackingHtml}</div>
-            <div class="section-title-row" style="margin-top:16px;"><h4 style="margin:0;">История оценок LLM/графа</h4></div>
+            <div class="section-title-row" style="margin-top:16px;"><h4 style="margin:0;">История оценок графа и LLM</h4></div>
             <div>${assessHtml}</div>
         </div>
     `;
@@ -1150,7 +1210,7 @@ async function openEntityModal(kind) {
             }),
         });
     } else if (kind === 'diagnosis') {
-        const options = medicalCatalog.diagnoses.map(d => `<option value="${d.icd10}">${d.icd10} — ${d.name_ru}</option>`).join('');
+        const options = medicalCatalog.diagnoses.map(d => `<option value="${d.icd10}">${d.icd10} - ${d.name_ru}</option>`).join('');
         showFormModal({
             title: 'Диагноз',
             fields: [
@@ -1284,13 +1344,13 @@ function statusClass(status) {
 }
 
 function flagLabel(flag) {
-    const map = { norm: 'норма', low: 'ниже нормы', high: 'выше нормы', critical_low: 'критически низко', critical_high: 'критически высоко', unknown: '—' };
-    return map[flag] || '—';
+    const map = { norm: 'норма', low: 'ниже нормы', high: 'выше нормы', critical_low: 'критически низко', critical_high: 'критически высоко', unknown: '-' };
+    return map[flag] || '-';
 }
 
 function rangeText(low, high) {
     if (low == null && high == null) return '';
-    return `${low ?? ''}–${high ?? ''}`.replace(/^–$/, '');
+    return `${low ?? ''}-${high ?? ''}`.replace(/^-$/, '');
 }
 
 function fmtNum(v) {
@@ -1299,7 +1359,7 @@ function fmtNum(v) {
 }
 
 function formatDt(iso) {
-    if (!iso) return '—';
+    if (!iso) return '-';
     const d = new Date(iso);
     if (isNaN(d)) return iso;
     return d.toLocaleString();
@@ -1361,7 +1421,7 @@ async function submitNewVisit() {
 
     if (isTooClose) {
         // confirm выводит стандартное окно с кнопками "ОК" и "Отмена"
-        const userAgreed = confirm("⚠️ Внимание!\nУ пациента уже есть визит с разницей менее 1 часа от указанного времени.\nВы точно хотите добавить еще один?");
+        const userAgreed = confirm("! Внимание!\nУ пациента уже есть визит с разницей менее 1 часа от указанного времени.\nВы точно хотите добавить еще один?");
         if (!userAgreed) {
             return;
         }
@@ -1515,7 +1575,7 @@ async function openNsiModal(mode) {
                 // Важно: мы передаем ID в openEditForm, а не весь объект!
                 actionBtn = `<button class="small-btn" style="color:#2563eb; border-color:#2563eb;" onclick="openEditForm(${p.id})">Редактировать</button>`;
             } else {
-                // Внешние одинарные кавычки: иначе JSON.stringify даёт "…" и рвёт onclick="…"
+                // Внешние одинарные кавычки: иначе JSON.stringify даёт "..." и рвёт onclick="..."
                 actionBtn = `<button type="button" class="small-btn" style="color:#ef4444; border-color:#ef4444; background-color:#fef2f2;" onclick='confirmDelete(${p.id}, ${JSON.stringify(p.full_name)})'>Удалить</button>`;
             }
 
@@ -1610,6 +1670,321 @@ async function openEditForm(patientId) {
 
     } catch (err) {
         alert("Ошибка при получении данных пациента: " + err.message);
+    }
+}
+
+// =====================================================================
+// Track 1 / Track 4: диагностическая метка + модалка 'Граф пациента'
+// =====================================================================
+
+function renderDiagnosisChip(diagnosis) {
+    if (!diagnosis || typeof diagnosis !== 'object' || !diagnosis.label) {
+        return '<span class="diagnosis-chip diagnosis-chip-empty">не определена</span>';
+    }
+    const label = DIAGNOSIS_LABELS[diagnosis.label] || diagnosis.label;
+    const color = DIAGNOSIS_COLORS[diagnosis.label] || '#94a3b8';
+    return `<span class="diagnosis-chip" style="background:${color};">${escapeHtml(label)}</span>`;
+}
+
+async function openPatientGraphModal() {
+    if (!currentCaseId) {
+        alert('Сначала выберите кейс.');
+        return;
+    }
+    const modal = document.getElementById('patientGraphModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+
+    try {
+        graphTraceData = await apiJson(`/api/cases/${currentCaseId}/graph-trace`);
+    } catch (err) {
+        alert('Не удалось загрузить граф пациента: ' + err.message);
+        modal.style.display = 'none';
+        return;
+    }
+    if (graphTraceData?.error) {
+        alert(graphTraceData.error);
+        modal.style.display = 'none';
+        return;
+    }
+
+    populateGraphHistorySelector(graphTraceData);
+    renderGraphDiagnosisStrip(graphTraceData);
+    renderGraphRouteList(graphTraceData);
+    renderGraphFiredList(graphTraceData);
+    renderCytoscapeGraph(graphTraceData);
+}
+
+function closePatientGraphModal() {
+    const modal = document.getElementById('patientGraphModal');
+    if (modal) modal.style.display = 'none';
+    if (graphCyInstance) {
+        graphCyInstance.destroy();
+        graphCyInstance = null;
+    }
+    graphTraceData = null;
+}
+
+function populateGraphHistorySelector(data) {
+    const select = document.getElementById('graphHistorySelect');
+    if (!select) return;
+    const history = Array.isArray(data?.history) ? data.history : [];
+    const selectedId = data?.selected_assessment_id;
+    const options = [
+        `<option value="">- последняя оценка -</option>`,
+        ...history.slice().reverse().map(item => {
+            const label = `${item.run_kind || '-'} - ${formatDt(item.created_at)} - ${item.risk_level || ''}`;
+            const sel = String(item.id) === String(selectedId) ? 'selected' : '';
+            return `<option value="${item.id}" ${sel}>${escapeHtml(label)}</option>`;
+        }),
+    ];
+    select.innerHTML = options.join('');
+}
+
+async function onGraphHistoryChange(value) {
+    if (!currentCaseId) return;
+    const url = value
+        ? `/api/cases/${currentCaseId}/graph-trace?assessment_id=${encodeURIComponent(value)}`
+        : `/api/cases/${currentCaseId}/graph-trace`;
+    try {
+        graphTraceData = await apiJson(url);
+    } catch (err) {
+        alert('Не удалось получить трассу выбранной оценки: ' + err.message);
+        return;
+    }
+    if (graphTraceData?.error) {
+        alert(graphTraceData.error);
+        return;
+    }
+    renderGraphDiagnosisStrip(graphTraceData);
+    renderGraphRouteList(graphTraceData);
+    renderGraphFiredList(graphTraceData);
+    renderCytoscapeGraph(graphTraceData);
+}
+
+function renderGraphDiagnosisStrip(data) {
+    const container = document.getElementById('graphDiagnosisStrip');
+    if (!container) return;
+    const diagnosis = (data && (data.latest_diagnosis || (data.latest_trace || {}).acs_diagnosis)) || null;
+    renderDiagnosisBanner(diagnosis, container);
+}
+
+function renderGraphRouteList(data) {
+    const list = document.getElementById('graphRouteList');
+    if (!list) return;
+    const trace = (data && data.latest_trace) || {};
+    const visited = Array.isArray(trace.visited_nodes) ? trace.visited_nodes : [];
+    if (!visited.length) {
+        list.innerHTML = '<li class="empty-inline">Трасса по графу пока не зафиксирована.</li>';
+        return;
+    }
+    list.innerHTML = visited
+        .map((node, idx) => {
+            const isCurrent = idx === visited.length - 1;
+            return `<li class="${isCurrent ? 'route-current' : ''}">${escapeHtml(node)}</li>`;
+        })
+        .join('');
+}
+
+function renderGraphFiredList(data) {
+    const list = document.getElementById('graphFiredList');
+    if (!list) return;
+    const trace = (data && data.latest_trace) || {};
+    const fires = Array.isArray(trace.rule_fires) ? trace.rule_fires : [];
+    if (!fires.length) {
+        list.innerHTML = '<li class="empty-inline">Правила КР не сработали.</li>';
+        return;
+    }
+    list.innerHTML = fires
+        .map(fire => `
+            <li class="fired-rule fired-${escapeHtml(fire.severity || 'medium')}">
+                <div><b>${escapeHtml(fire.title_ru || fire.rule_id)}</b></div>
+                <div class="muted-line">${escapeHtml(fire.reason || '')}</div>
+                <div class="muted-line">КР: ${escapeHtml(fire.kr_reference || '')}</div>
+            </li>
+        `)
+        .join('');
+}
+
+function renderCytoscapeGraph(data) {
+    const container = document.getElementById('cyContainer');
+    if (!container || typeof cytoscape === 'undefined') return;
+
+    if (graphCyInstance) {
+        graphCyInstance.destroy();
+        graphCyInstance = null;
+    }
+
+    const canonical = (data && data.canonical_graph) || { nodes: [], edges: [] };
+    const trace = (data && data.latest_trace) || {};
+    const visited = new Set(Array.isArray(trace.visited_nodes) ? trace.visited_nodes : []);
+    const current = trace.current_node || (Array.isArray(trace.visited_nodes) && trace.visited_nodes.length
+        ? trace.visited_nodes[trace.visited_nodes.length - 1]
+        : null);
+    const firedDiagnosisCode = ((data && data.latest_diagnosis) || {}).label
+        || ((trace.acs_diagnosis || {}).label);
+    const firedRuleIds = new Set(
+        (Array.isArray(trace.rule_fires) ? trace.rule_fires : []).map(f => f.rule_id)
+    );
+
+    const elements = [];
+    (canonical.nodes || []).forEach(node => {
+        let state = 'idle';
+        if (current && node.id === current) state = 'current';
+        else if (visited.has(node.id)) state = 'visited';
+        if (firedDiagnosisCode && node.diagnosis_code === firedDiagnosisCode) state = 'fired-diag';
+        if (Array.isArray(node.rule_ids) && node.rule_ids.some(id => firedRuleIds.has(id))) {
+            state = 'fired-rule';
+        }
+        elements.push({
+            data: {
+                id: node.id,
+                label: node.label,
+                category: node.category,
+                color: node.color || '#94a3b8',
+                state,
+                description: node.description || '',
+            },
+        });
+    });
+    (canonical.edges || []).forEach(edge => {
+        const source = edge.source;
+        const target = edge.target;
+        let highlighted = false;
+        if (current === target && visited.has(source)) highlighted = true;
+        if (visited.has(source) && visited.has(target)) highlighted = true;
+        elements.push({
+            data: {
+                id: edge.id,
+                source,
+                target,
+                label: edge.label || '',
+                kind: edge.kind || 'flow',
+                highlighted: highlighted ? '1' : '0',
+            },
+        });
+    });
+
+    graphCyInstance = cytoscape({
+        container,
+        elements,
+        wheelSensitivity: 0.2,
+        layout: {
+            name: typeof cytoscape.use !== 'undefined' && typeof dagre !== 'undefined' ? 'dagre' : 'breadthfirst',
+            rankDir: 'LR',
+            nodeSep: 30,
+            edgeSep: 20,
+            rankSep: 80,
+            padding: 20,
+        },
+        style: [
+            {
+                selector: 'node',
+                style: {
+                    'background-color': 'data(color)',
+                    'opacity': 0.55,
+                    'label': 'data(label)',
+                    'color': '#0f172a',
+                    'font-size': 11,
+                    'text-wrap': 'wrap',
+                    'text-max-width': 160,
+                    'text-valign': 'center',
+                    'text-halign': 'center',
+                    'width': 'label',
+                    'height': 'label',
+                    'padding': '10px',
+                    'shape': 'round-rectangle',
+                    'border-width': 1,
+                    'border-color': '#cbd5e1',
+                },
+            },
+            {
+                selector: 'node[state = "visited"]',
+                style: {
+                    'opacity': 1,
+                    'border-color': '#16a34a',
+                    'border-width': 2,
+                },
+            },
+            {
+                selector: 'node[state = "current"]',
+                style: {
+                    'opacity': 1,
+                    'border-color': '#2563eb',
+                    'border-width': 4,
+                    'font-weight': 'bold',
+                },
+            },
+            {
+                selector: 'node[state = "fired-rule"]',
+                style: {
+                    'opacity': 1,
+                    'border-color': '#dc2626',
+                    'border-width': 3,
+                    'border-style': 'dashed',
+                },
+            },
+            {
+                selector: 'node[state = "fired-diag"]',
+                style: {
+                    'opacity': 1,
+                    'border-color': '#dc2626',
+                    'border-width': 4,
+                },
+            },
+            {
+                selector: 'edge',
+                style: {
+                    'curve-style': 'bezier',
+                    'target-arrow-shape': 'triangle',
+                    'arrow-scale': 1,
+                    'line-color': '#cbd5e1',
+                    'target-arrow-color': '#cbd5e1',
+                    'label': 'data(label)',
+                    'font-size': 9,
+                    'color': '#475569',
+                    'text-background-color': '#ffffff',
+                    'text-background-opacity': 0.85,
+                    'text-background-padding': 2,
+                    'opacity': 0.5,
+                },
+            },
+            {
+                selector: 'edge[highlighted = "1"]',
+                style: {
+                    'line-color': '#2563eb',
+                    'target-arrow-color': '#2563eb',
+                    'width': 3,
+                    'opacity': 1,
+                },
+            },
+            {
+                selector: 'edge[kind = "reference"]',
+                style: {
+                    'line-style': 'dashed',
+                    'line-color': '#fb923c',
+                    'target-arrow-color': '#fb923c',
+                    'opacity': 0.7,
+                },
+            },
+            {
+                selector: 'edge[kind = "produces"]',
+                style: {
+                    'line-style': 'dotted',
+                    'line-color': '#a855f7',
+                    'target-arrow-color': '#a855f7',
+                    'opacity': 0.7,
+                },
+            },
+        ],
+    });
+
+    // Центрируем и фокусируем граф на текущем узле, если он есть.
+    if (current) {
+        const node = graphCyInstance.getElementById(current);
+        if (node && node.length) {
+            graphCyInstance.center(node);
+        }
     }
 }
 

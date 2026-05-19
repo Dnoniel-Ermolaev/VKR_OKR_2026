@@ -33,6 +33,9 @@ class AgentState(TypedDict, total=False):
     route_reason: str
     llm_used: bool
     rule_reasons: List[str]
+    rule_fires: List[Dict[str, Any]]
+    acs_diagnosis: Dict[str, Any]
+    node_trace: List[Dict[str, Any]]
     rag_context: str
     citations: List[str]
     db_results: List[Dict[str, Any]]

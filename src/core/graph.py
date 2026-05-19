@@ -1,5 +1,6 @@
 from src.core.nodes import (
     clarify_data,
+    classify_acs,
     data_quality_issue,
     diagnostic_uncertain,
     high_risk_fast_track,
@@ -42,6 +43,7 @@ def build_graph():
     workflow.add_node("clarify_data", clarify_data)
     workflow.add_node("data_quality_issue", data_quality_issue)
     workflow.add_node("rule_check", rule_check)
+    workflow.add_node("classify_acs", classify_acs)
     workflow.add_node("router_diagnostic", router_diagnostic)
     workflow.add_node("high_risk_fast_track", high_risk_fast_track)
     workflow.add_node("diagnostic_uncertain", diagnostic_uncertain)
@@ -73,7 +75,8 @@ def build_graph():
         route_after_clarify,
         {"llm_parse_history": "llm_parse_history", "data_quality_issue": "data_quality_issue"},
     )
-    workflow.add_edge("rule_check", "router_diagnostic")
+    workflow.add_edge("rule_check", "classify_acs")
+    workflow.add_edge("classify_acs", "router_diagnostic")
     workflow.add_conditional_edges(
         "router_diagnostic",
         route_after_diagnostic,
@@ -128,6 +131,7 @@ class _FallbackGraph:
                 current.update(output_save(current))
                 return current
         current.update(rule_check(current))
+        current.update(classify_acs(current))
         current.update(router_diagnostic(current))
         diagnostic_step = route_after_diagnostic(current)
         if diagnostic_step == "diagnostic_uncertain":

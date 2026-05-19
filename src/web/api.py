@@ -5,12 +5,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from src.infrastructure.db.database import SessionLocal
+from src.infrastructure.db.init_db import init_database
 from src.infrastructure.db.repository import sql_database_repository
 from src.infrastructure.importers.excel_importer import ExcelImportService
 from src.web.services import (
     CaseService,
     CatalogService,
     DiagnosisService,
+    GraphTraceService,
     MedicationService,
     ObservationService,
     PatientService,
@@ -21,6 +23,22 @@ from src.web.services import (
 )
 
 app = FastAPI(title="ACS Web API")
+
+
+# Подтягиваем схему БД при старте (идемпотентно). Это спасает от ситуации,
+# когда после обновления кода в репозитории появились новые колонки
+# (например, latest_acs_diagnosis / latest_path_trace_json), а разработчик
+# забыл выполнить `python -m src.infrastructure.db.init_db` вручную.
+@app.on_event("startup")
+def _ensure_schema_up_to_date() -> None:
+    try:
+        init_database()
+    except Exception as exc:
+        # Если БД недоступна - поднимать сервис всё равно не будем,
+        # но падать целиком тоже не хотим: пусть FastAPI стартует
+        # с понятной ошибкой в логе.
+        print(f"[startup] init_database failed: {exc}")
+
 
 # Определяем местоположение файлов HTML и стилей
 app.mount("/static", StaticFiles(directory="src/web/static"), name="static")
@@ -245,6 +263,17 @@ async def api_case_reassess(case_id: str, data: dict | None = None, db=Depends(g
 async def api_case_control(case_id: str, db=Depends(get_db)):
     service = CaseService(db)
     return service.get_control_dashboard(case_id)
+
+
+# API: Получить канонический граф пациента + трассу прохождения по нему
+@app.get("/api/cases/{case_id}/graph-trace")
+async def api_case_graph_trace(
+    case_id: str,
+    assessment_id: int | None = None,
+    db=Depends(get_db),
+):
+    service = GraphTraceService(db)
+    return service.get(case_id, assessment_id=assessment_id)
 
 
 # API: Получить витальные показатели кейса

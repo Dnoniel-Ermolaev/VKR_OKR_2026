@@ -142,6 +142,8 @@ class TriageCase(Base):
     latest_next_step: Mapped[str] = mapped_column(String(64), default="")
     latest_explanation: Mapped[str] = mapped_column(Text, default="")
     latest_citations: Mapped[list[str]] = mapped_column(JSON, default=list)
+    latest_acs_diagnosis: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    latest_path_trace_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
 
     missing_fields_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -193,6 +195,8 @@ class CaseAssessment(Base):
     explanation: Mapped[str] = mapped_column(Text, default="")
     citations_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     missing_fields_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    acs_diagnosis_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    path_trace_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     llm_used: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
